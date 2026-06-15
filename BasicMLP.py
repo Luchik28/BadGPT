@@ -1,45 +1,6 @@
 import math
-import numpy as np
 import random
-
 #From Andrej Karpathy's vid on Micrograd
-
-def f(x):
-    return 3**x - 4*x + 5
-
-#print(f(3.0))
-
-xs = np.arange(0.5, 5.0, 0.25)
-ys = f(xs)
-#print(ys)
-
-# Derivative
-h = 0.000000001 #h would be 0 if we were actually calculating it, bc the formula is the limit as h aproached 0. But if we go too small we run into errors with floating point arithamatic and whatnot.
-x = 3.0
-#print((f(x+h) - f(x)) /h)
-# outputs 25.6 for some reason.
-#It's basically like, if we bump the formula by h, how much does it change? But h needs to be small cuz the function in not straight. If it was linear, it would jst be rise/run
-
-
-#more complicated derivative with inputs.
-
-#inputs
-#a = 2.0
-#b = -3.0
-#c = 10.0
-
-#output
-#d1 = a*b+c
-
-#shift a by h
-#d2 = (a+h)*b+c
-#derivative of a?
-#da = (d2-d1)/h
-
-#looking
-#print(da)
-
-#Value class
 
 class Value:
     def __init__(self, data, _children=(), _opp="", label=""):
@@ -136,31 +97,6 @@ class Value:
         for node in reversed(topo):
             node._backward()
 
-#basic neuron
-
-#inputs
-x1 = Value(2.0, label="x1")
-x2 = Value(0.0, label="x2")
-#weights
-w1= Value(-3.0, label="w1")
-w2 = Value(1.0, label="w2")
-#bias
-b = Value(6.7, label="b")
-#Apply weights to inputs
-x1w1 = x1*w1; x1w1.label = "x1w1"
-x2w2 = x2*w2; x2w2.label = "x2w2"
-#Combine inputs
-x1w1x2w2 = x1w1+x2w2; x1w1x2w2.label = "x1w1x2w2"
-#Apply bias to combined inputs
-n = x1w1x2w2 + b; n.label="n"
-#Apply func that scales it from 0 to 1
-o=n.tanh(); o.label="o"
-#print(o)
-
-#Now for the backpropogation
-o.backward()
-#sprint(x1.grad, w1.grad, x2.grad, w2.grad)
-
 #Ok now for a Nueral Network!
 
 class Nueron:
@@ -223,33 +159,62 @@ xs = [
 #desired output, for each of the inputs
 ys = [1.0, -1,0, 1.0, -1.0]
 
-#current predictions
-ypred = [n(x) for x in xs]
+#Old training func
 
-#loss function
-loss = sum([(yout-ygt)**2 for ygt, yout in zip(ys, ypred)])
-print("loss before training: " + str(loss))
+# #current predictions
+# ypred = [n(x) for x in xs]
+
+# #loss function
+# loss = sum([(yout-ygt)**2 for ygt, yout in zip(ys, ypred)])
+# print("loss before training: " + str(loss))
 
 
-#training
-lowest=Value(300.0)
-best = []
-for i in range(900): #the number of training cycles
+# #training
+# lowest=Value(300.0)
+# best = []
+# for i in range(900): #the number of training cycles
 
-    loss.backward() #get gradient
-    for p in n.parameters():
-        p.data += -.001 * p.grad #move value in direction of gradient
+#     loss.backward() #get gradient
+#     for p in n.parameters():
+#         p.data += -.001 * p.grad #move value in direction of gradient
 
-    ypred = [n(x) for x in xs] #get predictions
-    loss = sum([(yout-ygt)**2 for ygt, yout in zip(ys, ypred)]) #get loss
-    print(f"loss after training (step {i}): " + str(loss.data)) 
+#     ypred = [n(x) for x in xs] #get predictions
+#     loss = sum([(yout-ygt)**2 for ygt, yout in zip(ys, ypred)]) #get loss
+#     print(f"loss after training (step {i}): " + str(loss.data)) 
 
-    if (loss.data) <= (lowest.data): #check
-        print(f"new winner {loss}")
-        lowest.data = loss.data
-        best = ypred[:]
-    else:
-        print(f"no winner, {loss.data}")
+#     if (loss.data) <= (lowest.data): #check
+#         print(f"new winner {loss}")
+#         lowest.data = loss.data
+#         best = ypred[:]
+#     else:
+#         print(f"no winner, {loss.data}")
 
-print("**********")
-print(f"final prediction: {best} with loss {lowest.data}")
+# print("**********")
+# print(f"final prediction: {best} with loss {lowest.data}")
+
+
+#exportable train function:
+def Train(mlp, data, expectedResult, trainingcycles, step):
+    ypred = [mlp(x) for x in data]
+    loss = sum([(yout-ygt)**2 for ygt, yout in zip(expectedResult, ypred)])
+    print("loss before training: " + str(loss.data))
+
+    lowest=Value(1000000.0) #really big number
+    best = []
+    for i in range(trainingcycles): #the number of training cycles
+        loss.backward() #get gradient
+        for p in n.parameters():
+            p.data += -step * p.grad #move value in direction of gradient (it's negative bc we want to move the loss down)
+
+        ypred = [mlp(x) for x in data] #get predictions
+        loss = sum([(yout-ygt)**2 for ygt, yout in zip(expectedResult, ypred)]) #get loss
+        print(f"loss after training (step {i}): " + str(loss.data)) 
+
+        if (loss.data) <= (lowest.data): #check
+            lowest.data = loss.data
+            best = ypred[:]
+
+    print("*****************************")
+    print(f"final prediction loss is {lowest.data}, prediction is {best}. Model weights saved.")
+
+#Train(n, xs, ys, 50, .01)
