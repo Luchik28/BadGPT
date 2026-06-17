@@ -15,3 +15,4 @@ ys = [1.0, -1,0, 1.0, -1.0]
 
 #train and test the model!
 Train(model, xs, ys, 50, .01)
+

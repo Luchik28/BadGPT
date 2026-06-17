@@ -1,0 +1,63 @@
+from BasicMLP import MLP, Train
+import math
+#This is me doing Andrej Karpathy's Makemore tutorial.
+
+words = open('names.txt', 'r').read().splitlines() #I got this file from Karpathy's Makemore github page, it has a bunch of names.
+# The idea is that we can train a model to produce vaguely name-sounding words.
+
+# I will start by using my BasicMLP to try to get this to work without the tutorial bc I think I can.
+
+# First we will assign a number to each character.
+# So, we will define a list, and loop through all of the words, and loop through the characters, and add each character to the inputs and the following character to the outputs.
+# This won't take in context from the earlier bit (like a transformer), so we will need to improve on that later.
+# Anyway this will be the first try and will for sure suck.
+# Model will have one input (number representing the letter) and one output (n)
+
+inputs = []
+outputs = []
+
+for word in words:
+    for i in range(len(word)-1):
+        # use the ASCII code for each letter for it to be numerical.
+        # All words are already all lowercase so we don't need to clean them
+        inputs.append([float(ord(word[i]))])
+        outputs.append(float(ord(word[i+1])))
+    
+    # Append the last letter, followed by space. When predicting, we will run the model until it outputs a space, at which point we will stop.
+    inputs.append([float(ord(word[len(word) - 1]))])
+    outputs.append(float(ord(" ")))
+
+model = MLP(1, [4,4,1])
+
+print("Starting training.")
+Train(model, inputs[:300], outputs[:300], 100, 1)
+
+print("\n*****************")
+print("Model trained, testing starting")
+print("*****************\n")
+
+while(True):
+    startingLetter = input("Enter a single, lowercase number to get a new name!")
+    word = startingLetter
+    i=0
+    while (word[-1] != " " or i > 50):
+        print(word)
+        newLetterCode = model([float(ord(word[-1]))])
+        l = chr(math.floor(int(newLetterCode.data)))
+        print(f"Adding letter {l} from code {math.floor(newLetterCode.data)}")
+        if (l == ""):
+            print("Letter not recognized.")
+            break
+        word += l
+        i+=1
+    print(f"Final name: {word}")
+    if (i>50):
+        print("Maximum length reached")
+
+
+# initially, it calculated the loss before training as 1,934,198,245
+# Then hit maximum recursion depth
+# So I will split the training data
+
+# After that and some bug fixes, I got it to finish training, but the loss doesn't seem to be going down.
+# When testing the final model, it outputs a number very close to 0, which is null in the ascii chart, so not a letter.
