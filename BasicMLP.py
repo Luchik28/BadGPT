@@ -61,7 +61,7 @@ class Value:
     
     def tanh(self):
         x=self.data
-        t = (math.exp(2*x)-1)/(math.exp(2*x)+1)
+        t = math.tanh(x)
 
         def _backward():
             self.grad += (1-t**2) * out.grad
@@ -231,6 +231,7 @@ def TrainMakeMore(mlp, data, expectedResult, trainingcycles, step):
 
     lowest=Value(1000000000.0) #really big number
     best = []
+
     for i in range(trainingcycles): #the number of training cycles
         loss.backward() #get gradient
         for p in mlp.parameters():

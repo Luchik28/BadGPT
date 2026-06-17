@@ -40,7 +40,10 @@ for word in words:
 model = MLP(1, [4,18,27])
 
 print("Starting training.")
-TrainMakeMore(model, inputs[:15], outputs[:15], 50, .1)
+try:
+    TrainMakeMore(model, inputs[:15], outputs[:15], 50, .1)
+except OverflowError:
+    print("Math range error.")
 
 print("\n*****************")
 print("Model trained, testing starting")
@@ -51,21 +54,26 @@ while(True):
     startingLetter = input("Enter a single, lowercase number to get a new name!")
     word = startingLetter
     i=0
-    while (word[-1] != " " or i > 50):
+    while (word[-1] != " " and i < 50):
         print(f"current word: {word}")
-        newLetterCode = model([float(ord(word[-1]))])
-        if (newLetterCode.data < 60):
-            print(f"ASCII Code ( {newLetterCode.data} ) corrupted")
-            break
-        l = chr(math.floor(int(newLetterCode.data)))
-        print(f"Adding letter {l} from code {math.floor(newLetterCode.data)}")
+        newLetterCodeArray = model([float(ord(word[-1]))])
+
+        highestProb = -1.0
+        letter=-1
+        for prob in range(len(newLetterCodeArray)):
+            if (newLetterCodeArray[prob].data > highestProb):
+                highestProb = newLetterCodeArray[prob].data
+                letter = prob + 97
+
+        l = chr(math.floor(int(letter)))
+        print(f"Adding letter {l} from code {math.floor(letter)}")
         if (l == None):
             print("Letter not recognized.")
             break
         word += l
         i+=1
     print(f"Final name: {word}")
-    if (i>50):
+    if (i>=50):
         print("Maximum length reached")
 
 
