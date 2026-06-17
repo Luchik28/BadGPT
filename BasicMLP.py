@@ -55,7 +55,7 @@ class Value:
         out = Value(self.data**other, (self, ), f"**{other}")
 
         def _backward():
-            self.grad = other * (self.data ** (other-1)) * out.grad
+            self.grad += other * (self.data ** (other-1)) * out.grad
         out._backward = _backward
         return out
     
@@ -203,8 +203,9 @@ def Train(mlp, data, expectedResult, trainingcycles, step):
     best = []
     for i in range(trainingcycles): #the number of training cycles
         loss.backward() #get gradient
-        for p in n.parameters():
+        for p in mlp.parameters():
             p.data += -step * p.grad #move value in direction of gradient (it's negative bc we want to move the loss down)
+            p.grad = 0 #zero the grad so it doesn't accumilate.
 
         ypred = [mlp(x) for x in data] #get predictions
         loss = sum([(yout-ygt)**2 for ygt, yout in zip(expectedResult, ypred)]) #get loss
@@ -218,3 +219,31 @@ def Train(mlp, data, expectedResult, trainingcycles, step):
     print(f"final prediction loss is {lowest.data}, prediction is {best}. Model weights saved.")
 
 #Train(n, xs, ys, 50, .01)
+
+def TrainMakeMore(mlp, data, expectedResult, trainingcycles, step):
+    ypred = [mlp(x) for x in data]
+
+    #yout is list ([0.1, 1.0, -.05, etc])
+    #ygt is list  ([-1.0, -1.0, 1.0, -1.0, etc])
+    #We just add the sum of each value subtracted.
+    loss = sum([(sum([act - exp for exp, act in zip(ygt, yout)]))**2 for ygt, yout in zip(expectedResult, ypred)])
+    print("loss before training: " + str(loss.data))
+
+    lowest=Value(1000000000.0) #really big number
+    best = []
+    for i in range(trainingcycles): #the number of training cycles
+        loss.backward() #get gradient
+        for p in mlp.parameters():
+            p.data += -step * p.grad #move value in direction of gradient (it's negative bc we want to move the loss down)
+            p.grad = 0 #zero the grad so it doesn't accumilate.
+
+        ypred = [mlp(x) for x in data] #get predictions
+        loss = sum([(sum([act - exp for exp, act in zip(ygt, yout)]))**2 for ygt, yout in zip(expectedResult, ypred)]) #get loss
+        print(f"loss after training (step {i}): " + str(loss.data)) 
+
+        if (loss.data) <= (lowest.data): #check
+            lowest.data = loss.data
+            best = ypred[:]
+
+    print("*****************************")
+    print(f"final prediction loss is {lowest.data}, prediction is {best}. Model weights saved.")

@@ -1,4 +1,4 @@
-from BasicMLP import MLP, Train
+from BasicMLP import MLP, TrainMakeMore
 import math
 #This is me doing Andrej Karpathy's Makemore tutorial.
 
@@ -21,22 +21,33 @@ for word in words:
         # use the ASCII code for each letter for it to be numerical.
         # All words are already all lowercase so we don't need to clean them
         inputs.append([float(ord(word[i]))])
-        outputs.append(float(ord(word[i+1])))
+
+        #We need to put in an array
+        outArray = []
+        for x in range(27):
+            if x==(ord(word[-1])-97):
+                outArray.append(1.0)
+            else:
+                outArray.append(-1.0)
+        outputs.append(outArray)
     
     # Append the last letter, followed by space. When predicting, we will run the model until it outputs a space, at which point we will stop.
     inputs.append([float(ord(word[len(word) - 1]))])
-    outputs.append(float(ord(" ")))
+    blank = [-1.0] * 26
+    blank.append(1.0)
+    outputs.append(blank)
 
-model = MLP(1, [4,4,1])
+model = MLP(1, [4,18,27])
 
 print("Starting training.")
-Train(model, inputs[:4], outputs[:4], 50, .1)
+TrainMakeMore(model, inputs[:15], outputs[:15], 50, .1)
 
 print("\n*****************")
 print("Model trained, testing starting")
 print("*****************\n")
 
 while(True):
+    #TODO: instead of getting ASCI code directly, find which index is greates, add 97 to it, and there you go (unless it's 27, then end immediatly)
     startingLetter = input("Enter a single, lowercase number to get a new name!")
     word = startingLetter
     i=0
@@ -44,7 +55,7 @@ while(True):
         print(f"current word: {word}")
         newLetterCode = model([float(ord(word[-1]))])
         if (newLetterCode.data < 60):
-            print("ASCII Code corrupted")
+            print(f"ASCII Code ( {newLetterCode.data} ) corrupted")
             break
         l = chr(math.floor(int(newLetterCode.data)))
         print(f"Adding letter {l} from code {math.floor(newLetterCode.data)}")
@@ -64,3 +75,13 @@ while(True):
 
 # After that and some bug fixes, I got it to finish training, but the loss doesn't seem to be going down.
 # When testing the final model, it outputs a number very close to 0, which is null in the ascii chart, so not a letter.
+
+# I found some more bugs, like the gradient not being zeroed in between training steps.
+# But that didn't have any effect.
+
+# After thinking for a bit, I realize that I'm an idiot, the model has a non-linearity function (tanh) at the end
+# That squishes the result between -1 and 1, so it will never output an ASCII code.
+
+# So what I need to do is get the result to take -1 to 1, and change that to a number between 97 and 122 (the ASCII codes).
+# Or, what if I outputted 27 outputs, each representing the probability of that letter.
+# That would be cleaner than trying to get an exact ASCII code.
