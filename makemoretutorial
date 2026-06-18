@@ -20,30 +20,38 @@ for word in words:
     for i in range(len(word)-1):
         # use the ASCII code for each letter for it to be numerical.
         # All words are already all lowercase so we don't need to clean them
-        inputs.append([float(ord(word[i]))])
+        inArray = [-1.0] * 26
+        inArray[ord(word[i])-97] = 1.0
+        inputs.append(inArray)
 
         #We need to put in an array
         outArray = []
         for x in range(27):
-            if x==(ord(word[-1])-97):
+            if x==(ord(word[i+1])-97):
                 outArray.append(1.0)
             else:
                 outArray.append(-1.0)
         outputs.append(outArray)
     
     # Append the last letter, followed by space. When predicting, we will run the model until it outputs a space, at which point we will stop.
-    inputs.append([float(ord(word[len(word) - 1]))])
+    inArray = [-1.0]*26
+    inArray[ord(word[-1])-97] = 1.0
+    inputs.append(inArray)
+
     blank = [-1.0] * 26
     blank.append(1.0)
     outputs.append(blank)
 
-model = MLP(1, [4,18,27])
+model = MLP(26, [18,18,27])
 
-print("Starting training.")
+print("Starting training...")
+print("Press ^C to end")
 try:
-    TrainMakeMore(model, inputs[:15], outputs[:15], 50, .1)
+    TrainMakeMore(model, inputs[:500], outputs[:500], 50, .001)
 except OverflowError:
     print("Math range error.")
+except KeyboardInterrupt:
+    print("Training ended early, proceeding.")
 
 print("\n*****************")
 print("Model trained, testing starting")
@@ -56,7 +64,11 @@ while(True):
     i=0
     while (word[-1] != " " and i < 50):
         print(f"current word: {word}")
-        newLetterCodeArray = model([float(ord(word[-1]))])
+
+        inputArray = [-1.0] * 26 # create empty input set
+        inputArray[ord(word[-1])-97] = 1.0 # set the previous letter's index to 1
+
+        newLetterCodeArray = model(inputArray) #run it through the model to get the correct value
 
         highestProb = -1.0
         letter=-1
@@ -93,3 +105,9 @@ while(True):
 # So what I need to do is get the result to take -1 to 1, and change that to a number between 97 and 122 (the ASCII codes).
 # Or, what if I outputted 27 outputs, each representing the probability of that letter.
 # That would be cleaner than trying to get an exact ASCII code.
+
+# So I did some bug fixes, and yet nothing works :(
+# Right now, loss plummets (starts ~20k, goes down to ~2k within first 2 epochs, then stalls and only goes down by like .3 each subsequent epoch)
+# I think, because it always outputs the same letter, it just gets the average letter, and puts it out.
+# This would be quick to train, but not very good, which is why it plummets then stalls.
+# So maybe putting in 26 inputs as well, one for each letter?  

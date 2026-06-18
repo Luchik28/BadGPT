@@ -226,7 +226,7 @@ def TrainMakeMore(mlp, data, expectedResult, trainingcycles, step):
     #yout is list ([0.1, 1.0, -.05, etc])
     #ygt is list  ([-1.0, -1.0, 1.0, -1.0, etc])
     #We just add the sum of each value subtracted.
-    loss = sum([(sum([act - exp for exp, act in zip(ygt, yout)]))**2 for ygt, yout in zip(expectedResult, ypred)])
+    loss = sum([(sum([(act - exp)**2 for exp, act in zip(ygt, yout)])) for ygt, yout in zip(expectedResult, ypred)])
     print("loss before training: " + str(loss.data))
 
     lowest=Value(1000000000.0) #really big number
@@ -239,7 +239,7 @@ def TrainMakeMore(mlp, data, expectedResult, trainingcycles, step):
             p.grad = 0 #zero the grad so it doesn't accumilate.
 
         ypred = [mlp(x) for x in data] #get predictions
-        loss = sum([(sum([act - exp for exp, act in zip(ygt, yout)]))**2 for ygt, yout in zip(expectedResult, ypred)]) #get loss
+        loss = sum([(sum([(act - exp)**2 for exp, act in zip(ygt, yout)])) for ygt, yout in zip(expectedResult, ypred)]) #get loss
         print(f"loss after training (step {i}): " + str(loss.data)) 
 
         if (loss.data) <= (lowest.data): #check
