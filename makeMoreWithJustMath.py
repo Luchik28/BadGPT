@@ -8,7 +8,7 @@ wordProb = [[0 for _ in range(27)] for _ in range(27)]
 inputs = []
 outputs = []
 
-for word in words:
+for word in words[:50]:
     chs = ['.'] + list(word) + ['.'] # . will be our start/end character.
     for ch1, ch2 in zip(chs, chs[1:]):
         inputs.append(ch1)
@@ -51,7 +51,7 @@ def wordWithMath():
     print("Length exceeded")
     return word[1:]
 
-print(wordWithMath())
+#print(wordWithMath())
 
 # How to imporove (ideas):
 # Well, one way could be to squish the more common letters with a log function.
@@ -84,3 +84,30 @@ for output in range(len(outputs)):
 
 model = MLP(27, [27]) #27 inputs, 27 outputs.
 
+print("Training:")
+TrainMakeMoreTry2(model, inputs, outputs, 20, .001)
+print("Done Training:")
+
+for i in range(10):
+    intro = [0 for _ in range(27)]
+    intro[26] = 1
+    print(model(intro))
+
+    word = "."
+    dontdie = 0
+    while dontdie < 50:
+        prevNum = ord(word[-1])-97
+
+        if prevNum < 0 or prevNum>26:
+            prevNum = 26
+        
+        letterChoices = [(wordProb[prevNum][i]) for i in range(26)]
+
+        letterNum = letterChoices.index(max(letterChoices))+97
+        #letterIndex = random.choices(range(27), weights=wordProb[prevNum])[0]
+        if (letterNum==26):
+            print(word[1:])
+            break
+        else:
+            word+=chr(letterNum)
+        dontdie +=1

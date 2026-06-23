@@ -1,0 +1,35 @@
+import math
+import random
+
+# Yay now we're on the next tutorial.
+# Read Bengio et al and following their algorithm.
+# Encode each word into a 30 dimensional space.
+# Start off with encodings as random, and then tune with backpropogation.
+
+words = open('names.txt', 'r').read().splitlines() # Get our words :D
+
+#Make letter into number
+chars = sorted(list(set(''.join(words))))
+stoi = {s:i+1 for i,s in enumerate(chars)}
+stoi['.']=0
+itos = {i:s for s,i in stoi.items()}
+
+# we're starting by taking in the previous 3 letters
+blockSize = 3
+inputs, outputs = [],[]
+
+for w in words[:5]:
+    context = [0] * blockSize # start with 3 starting characters
+    for ch in w + '.':
+        ix = stoi[ch] # get the current character
+        inputs.append(context) # add input to inputs, output to outputs
+        outputs.append(ix)
+        context = context[1:] + [ix] # update the context
+
+# Next we need to define the embeddings
+# Bengio et al crammed 17k words into 30 dimensions, so we will put 27 characters into 2 dimensions to start
+# So each row represents a new letter, with 2 dimensions.
+charEncodings = [[random.random() for _ in range(2)] for _ in range(27)]
+print(charEncodings)
+
+# TO encode one, we multiply the one hot encoding of one thing by our charEncodings
