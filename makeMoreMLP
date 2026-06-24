@@ -1,5 +1,6 @@
 import math
 import random
+import numpy as np
 
 # Yay now we're on the next tutorial.
 # Read Bengio et al and following their algorithm.
@@ -13,6 +14,15 @@ chars = sorted(list(set(''.join(words))))
 stoi = {s:i+1 for i,s in enumerate(chars)}
 stoi['.']=0
 itos = {i:s for s,i in stoi.items()}
+
+#takes in a LETTER and turns it into a one hot list with . as letter 27
+def oneHot(c):
+    out = [0 for _ in range(27)]
+    curIndex = ord(c)-97
+    if curIndex <0:
+        curIndex=26 # Change it if it's a period
+    out[curIndex] = 1
+    return out
 
 # we're starting by taking in the previous 3 letters
 blockSize = 3
@@ -30,6 +40,13 @@ for w in words[:5]:
 # Bengio et al crammed 17k words into 30 dimensions, so we will put 27 characters into 2 dimensions to start
 # So each row represents a new letter, with 2 dimensions.
 charEncodings = [[random.random() for _ in range(2)] for _ in range(27)]
-print(charEncodings)
 
 # TO encode one, we multiply the one hot encoding of one thing by our charEncodings
+
+#trial run with the letter f
+
+f = np.array(oneHot("f")) @ np.array(charEncodings)
+print(f)
+
+#So bc Im not using tensorflow, I need to build matrix multiplication
+# I'm just going to use numPY.
