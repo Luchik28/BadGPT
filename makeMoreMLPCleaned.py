@@ -209,3 +209,32 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
 
 for _ in range(1000):
     forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs)
+
+
+# Now let's test it !!!
+
+def predict():
+    batch = [random.randint(0, len(inputs)-1) for _ in range(32)] #  get 32 random indexes (indexii? indeces? idk)
+
+    enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(batch))]
+  
+    for input in range(len(batch)):
+        for c in range(len(inputs[batch[input]])):
+            enc[input][c] = charEncodings.data[inputs[batch[input]][c]]
+
+    #resize the inputs
+    for input in range(len(enc)):
+        out = []
+        for letter in enc[input]:
+            out.extend(letter)
+        enc[input] = out
+
+    enc = Value(enc)
+
+    # Now for the forward pass
+    h = enc @ W1 + b1
+    h = h.tanh()
+    logits = h @ W2 + b2
+    e = np.exp(logits.data)
+    probs = e / e.sum(axis=1, keepdims=True)
+    print(max(probs))
