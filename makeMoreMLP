@@ -11,8 +11,8 @@ words = open('names.txt', 'r').read().splitlines() # Get our words :D
 
 #Make letter into number
 chars = sorted(list(set(''.join(words))))
-stoi = {s:i+1 for i,s in enumerate(chars)}
-stoi['.']=0
+stoi = {s:i for i,s in enumerate(chars)}
+stoi['.']=26
 itos = {i:s for s,i in stoi.items()}
 
 #takes in a LETTER and turns it into a one hot list with . as letter 27
@@ -44,9 +44,81 @@ charEncodings = [[random.random() for _ in range(2)] for _ in range(27)]
 # TO encode one, we multiply the one hot encoding of one thing by our charEncodings
 
 #trial run with the letter f
+# We use numPY here bc I will need to do matrix multiplication later anyway
+# f = np.array(oneHot("f")) @ np.array(charEncodings)
+# print(charEncodings[stoi["f"]])
+# print(f)
+#But rn we can just use charEncodings[stoi["f"]]
 
-f = np.array(oneHot("f")) @ np.array(charEncodings)
-print(f)
+#Alright so wtf are we doing
+# We define weights
+W1 = [[random.random() for _ in range(100)] for _ in range(6)]
+B1 = [random.random() for _ in range(100)]
 
-#So bc Im not using tensorflow, I need to build matrix multiplication
-# I'm just going to use numPY.
+# we need to do emeded inputs @ W1 + B1
+# Thats the structure for a nueron
+# We will need to put this into a class later to enable backprop, but that's the gist
+#Time to enbed!!!!
+for input in range(len(inputs)):
+    for c in range(len(inputs[input])):
+        inputs[input][c] = charEncodings[inputs[input][c]]
+
+#print(len(inputs), len(inputs[0]), len(inputs[0][0]))
+# So we have 32 inputs, each input has 3 2 dimension encodings of letters
+# We need to multiply each of these 6 ish? inputs by each of the weights
+# what he does in the vid is concatenate the 3 previous letters embeddings into 1
+# He uses a fancy shmansy pytorch function, which makes me depressed
+
+for input in range(len(inputs)):
+    #inputs[input] is an array of 3 examples
+    out = []
+    for letter in inputs[input]:
+        out.extend(letter)
+    inputs[input] = out
+
+#print(len(inputs), len(inputs[0]))
+
+# Ok now, we can multiply them using numpy
+# print(len(inputs), len(inputs[0]))
+# print(len(W1), len(W1[0]))
+h = np.array(inputs) @ np.array(W1) + np.array(B1)
+
+# next we have to run our hidden layer through some squishiness
+for f in range(len(h)):
+    for j in range(len(h[f])):
+        h[f][j] = math.tanh(h[f][j]) # What are these names :(
+
+
+#Now for the final layer
+# we want 27 outputs bc ts the end
+W2 = [[random.random() for _ in range(27)] for _ in range(100)]
+B2 = [random.random() for _ in range(27)]
+
+logits = h @ np.array(W2) + np.array(B2)
+
+# We exponentiate everything (e^x for x in logits), and then divide everything by it's sum (to get prob)
+for x in range(len(logits)):
+    for y in range(len(logits[x])):
+        logits[x][y] = math.exp(logits[x][y])
+    s = sum(logits[x])
+    for y in range(len(logits[x])):
+        logits[x][y] = logits[x][y]/s
+
+# Next we need to get the probability of the correct letter
+correctness = []
+
+for x in range(len(logits)):
+    correctness.append(logits[x][outputs[x]]) 
+
+# Then, we make loss the negative average of each element's log.
+loss = -sum([math.log(correctness[i]) for i in range(len(correctness))])/len(correctness)
+print(loss)
+
+# So one problem I fear we will encounter is we will need to remember the grad, the operation, etc, to enable backprop
+# That means numbers will be stored in the Value Class.
+# That means the arrays will hold Values, not numbers
+# So we can't create numPy arrays out of them
+# So we can't do efficient matrix multiplication
+# SO we're fried (respectfully)
+# WAIT WAIT WAIT
+# We can just make each Value store a npArray of a number. Lol we'll do that xD
