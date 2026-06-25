@@ -163,7 +163,7 @@ blockSize = 3
 inputs, outputs = [],[]
 
 # fill inputs, outputs
-for w in words[:5]:
+for w in words:
     context = [0] * blockSize # start with 3 starting characters
     for ch in w + '.':
         ix = stoi[ch] # get the current character
@@ -174,11 +174,13 @@ for w in words[:5]:
 
 def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs):
     # Encode the inputs
-    enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(inputs))]
+    batch = [random.randint(0, len(inputs)-1) for _ in range(32)] #  get 32 random indexes (indexii? indeces? idk)
 
-    for input in range(len(inputs)):
-        for c in range(len(inputs[input])):
-            enc[input][c] = charEncodings.data[inputs[input][c]]
+    enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(batch))]
+  
+    for input in range(len(batch)):
+        for c in range(len(inputs[batch[input]])):
+            enc[input][c] = charEncodings.data[inputs[batch[input]][c]]
 
     #resize the inputs
     for input in range(len(enc)):
@@ -195,7 +197,7 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
     logits = h @ W2 + b2
 
     # Now loss calculation
-    loss = cross_entropy(logits, outputs)
+    loss = cross_entropy(logits, [outputs[x] for x in batch])
 
     print(loss)
 
@@ -205,5 +207,5 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
         p.data += -.01 * p.grad
         p.grad = np.zeros_like(p.data, dtype=float)
 
-for _ in range(100):
+for _ in range(1000):
     forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs)

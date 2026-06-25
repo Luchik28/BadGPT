@@ -10,6 +10,6 @@ Download the files, use pip to install numPy, and run each file. It's not organi
 
 I plan on creating website where you can easily run each project I did (with each different technique), so it's easy to access.
 
-#### Credits
+### Credits
 
 It is heavily inspired by Andrej Karpathy's Micrograd/makeMore series.
