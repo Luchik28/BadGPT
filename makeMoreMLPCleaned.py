@@ -214,30 +214,54 @@ print("Done training!")
 # Now let's test it !!!
 
 def predict():
-    batch = [random.randint(0, len(inputs)-1) for _ in range(1)] #  get 32 random indexes (indexii? indeces? idk)
+    out = "..."
 
-    enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(batch))]
-  
-    for input in range(len(batch)):
-        for c in range(len(inputs[batch[input]])):
-            enc[input][c] = charEncodings.data[26] # THis is over the top bc I didn't want to redo everything, but it just puts in the index of starting character.
+    #First pass
+    enc = [[0,0,0]]
+    for c in range(3):
+        enc[0][c] = charEncodings.data[26] # THis is over the top bc I didn't want to redo everything, but it just puts in the index of starting character.
 
     #resize the inputs
     for input in range(len(enc)):
-        out = []
+        flat = []
         for letter in enc[input]:
-            out.extend(letter)
-        enc[input] = out
+            flat.extend(letter)
+        enc[input] = flat
 
     enc = Value(enc)
 
-    # Now for the forward pass
     h = enc @ W1 + b1
     h = h.tanh()
     logits = h @ W2 + b2
     e = np.exp(logits.data)
     probs = e / e.sum(axis=1, keepdims=True)
-    reverse = {v: k for k, v in stoi.items()} 
+    reverse = {v: k for k, v in stoi.items()}
     print(reverse[np.argmax(probs[0])])
 
+    while len(out) < 50:
+        # rest of name
+        enc = [[0,0,0]]
+        for c in range(3):
+            enc[0][c] = charEncodings.data[stoi[out[-3+c]]]
+
+        #resize the inputs
+        for input in range(len(enc)):
+            flat = []
+            for letter in enc[input]:
+                flat.extend(letter)
+            enc[input] = flat
+
+        enc = Value(enc)
+
+        h = enc @ W1 + b1
+        h = h.tanh()
+        logits = h @ W2 + b2
+        e = np.exp(logits.data)
+        probs = e / e.sum(axis=1, keepdims=True)
+        reverse = {v: k for k, v in stoi.items()} 
+        out += reverse[np.argmax(probs[0])]
+        if out[-1] == '.':
+            break
+    
+    print(out[3:-1])
 predict()
