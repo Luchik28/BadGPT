@@ -236,7 +236,6 @@ def predict():
     e = np.exp(logits.data)
     probs = e / e.sum(axis=1, keepdims=True)
     reverse = {v: k for k, v in stoi.items()}
-    print(reverse[np.argmax(probs[0])])
 
     while len(out) < 50:
         # rest of name
