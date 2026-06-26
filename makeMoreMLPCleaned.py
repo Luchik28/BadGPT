@@ -199,7 +199,7 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
     # Now loss calculation
     loss = cross_entropy(logits, [outputs[x] for x in batch])
 
-    print(loss)
+    #print(loss)
 
     loss.backward()
 
@@ -209,18 +209,18 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
 
 for _ in range(1000):
     forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs)
-
+print("Done training!")
 
 # Now let's test it !!!
 
 def predict():
-    batch = [random.randint(0, len(inputs)-1) for _ in range(32)] #  get 32 random indexes (indexii? indeces? idk)
+    batch = [random.randint(0, len(inputs)-1) for _ in range(1)] #  get 32 random indexes (indexii? indeces? idk)
 
     enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(batch))]
   
     for input in range(len(batch)):
         for c in range(len(inputs[batch[input]])):
-            enc[input][c] = charEncodings.data[inputs[batch[input]][c]]
+            enc[input][c] = charEncodings.data[26] # THis is over the top bc I didn't want to redo everything, but it just puts in the index of starting character.
 
     #resize the inputs
     for input in range(len(enc)):
@@ -237,4 +237,7 @@ def predict():
     logits = h @ W2 + b2
     e = np.exp(logits.data)
     probs = e / e.sum(axis=1, keepdims=True)
-    print(max(probs))
+    reverse = {v: k for k, v in stoi.items()} 
+    print(reverse[np.argmax(probs[0])])
+
+predict()
