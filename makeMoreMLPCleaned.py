@@ -145,6 +145,16 @@ def cross_entropy(logits, targets):
     
     out._backward = _backward
     return out
+def prog(val, total):
+    length = 20
+    out = "["
+    for i in range(length):
+        if i < math.ceil((val/total) * length):
+            out += "#"
+        else:
+            out += "-"
+    return out + "]"
+
 
 # defining weights
 W1 = Value(np.random.randn(6, 100))  # embedding_size * block_size -> hidden
@@ -174,7 +184,7 @@ for w in words:
 
 def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs):
     # Encode the inputs
-    batch = [random.randint(0, len(inputs)-1) for _ in range(32)] #  get 32 random indexes (indexii? indeces? idk)
+    batch = [random.randint(0, len(inputs)-1) for _ in range(128)] #  get 32 random indexes (indexii? indeces? idk)
 
     enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(batch))]
   
@@ -207,9 +217,12 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
         p.data += -.01 * p.grad
         p.grad = np.zeros_like(p.data, dtype=float)
 
-for _ in range(1000):
+epochs = 5000
+for i in range(epochs):
+    print(f"\rEpoch: {i+1}/{epochs}  {prog(i, epochs)}", end="")
     forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs)
-print("Done training!")
+
+print("\n\nDone training!\n")
 
 # Now let's test it !!!
 
@@ -262,5 +275,6 @@ def predict():
         if out[-1] == '.':
             break
     
-    print(out[3:-1])
+    print("Final Word: " + out[3:-1])
+
 predict()
