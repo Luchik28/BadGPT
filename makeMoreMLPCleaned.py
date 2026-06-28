@@ -1,6 +1,8 @@
 import math
 import random
 import numpy as np
+import matplotlib.pyplot as plt 
+import time
 words = open('names.txt', 'r').read().splitlines()
 
 # New value class! It's data value is of an np.Array, not just an integer.
@@ -154,12 +156,14 @@ def prog(val, total):
         else:
             out += "-"
     return out + "]"
-
+def trunc(number, digits):
+    stepper = 10 ** digits
+    return math.trunc(number * stepper) / stepper
 
 # defining weights
-W1 = Value(np.random.randn(6, 100))  # embedding_size * block_size -> hidden
-b1 = Value(np.zeros(100))
-W2 = Value(np.random.randn(100, 27))  # hidden -> logits
+W1 = Value(np.random.randn(6, 300))  # embedding_size * block_size -> hidden
+b1 = Value(np.zeros(300))
+W2 = Value(np.random.randn(300, 27))  # hidden -> logits
 b2 = Value(np.zeros(27))
 charEncodings = Value(np.random.randn(27,2))
 
@@ -168,6 +172,10 @@ parameters = [charEncodings, W1, b1, W2, b2] # for easy access during
 stoi = {s:i for i,s in enumerate(sorted(list(set(''.join(words)))))}
 stoi['.']=26
 itos = {i:s for s,i in stoi.items()}
+
+lre = [i/333 - 3 for i in range(1000)]
+lrs = [10 ** lre[i] for i in range(1000)]
+lrs.reverse()
 
 blockSize = 3
 inputs, outputs = [],[]
@@ -181,10 +189,20 @@ for w in words:
         outputs.append(ix)
         context = context[1:] + [ix] # update the context
 
+n1 = int(.8 * len(inputs))
+n2 = int(.9 * len(inputs))
 
-def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs):
+trainIn = inputs[:n1] # Training data (80%)
+trainOut = outputs[:n1]
+devIn = inputs[n1:n2] # Development data (10%)
+devOut = outputs[n1:n2]
+testIn = inputs[n2:] #  Test data (10%)
+testOut = outputs[n2:]
+
+
+def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs, epoch=0):
     # Encode the inputs
-    batch = [random.randint(0, len(inputs)-1) for _ in range(128)] #  get 32 random indexes (indexii? indeces? idk)
+    batch = [random.randint(0, len(inputs)-1) for _ in range(32)] #  get 32 random indexes (indexii? indeces? idk)
 
     enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(batch))]
   
@@ -214,15 +232,56 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
     loss.backward()
 
     for p in parameters:
-        p.data += -.01 * p.grad
+        p.data += -0.1 * p.grad
         p.grad = np.zeros_like(p.data, dtype=float)
 
-epochs = 5000
-for i in range(epochs):
-    print(f"\rEpoch: {i+1}/{epochs}  {prog(i, epochs)}", end="")
-    forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs)
+def forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs, epoch=0):
+    # Encode the inputs
+    batch = [random.randint(0, len(inputs)-1) for _ in range(32)] #  get 32 random indexes (indexii? indeces? idk)
 
-print("\n\nDone training!\n")
+    enc = [[0 for _ in range(len(inputs[0]))] for i in range(len(batch))]
+  
+    for input in range(len(batch)):
+        for c in range(len(inputs[batch[input]])):
+            enc[input][c] = charEncodings.data[inputs[batch[input]][c]]
+
+    #resize the inputs
+    for input in range(len(enc)):
+        out = []
+        for letter in enc[input]:
+            out.extend(letter)
+        enc[input] = out
+
+    enc = Value(enc)
+
+    # Now for the forward pass
+    h = enc @ W1 + b1
+    h = h.tanh()
+    logits = h @ W2 + b2
+
+    # Now loss calculation
+    loss = cross_entropy(logits, [outputs[x] for x in batch])
+
+    return loss
+
+epochs = 30000
+START_TIME = time.perf_counter()
+print(f"Started training Makemore ({epochs} epochs)")
+for i in range(epochs):
+    train_loss = trunc(forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, trainIn, trainOut, i).data, 3)
+    test_loss  = trunc(forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, testIn,  testOut,  i).data, 3)
+    elapsed_time = time.perf_counter() - START_TIME
+
+    line1 = f"Epoch: {i+1}/{epochs} {prog(i, epochs)}"
+    line2 = f"Training loss: {train_loss} Test loss: {test_loss}"
+    line3 = f"{elapsed_time:.4f}s"
+
+    # Move up two lines on every iteration except the first
+    prefix = "\033[3F" if i > 0 else ""
+    print(f"{prefix}{line1}\033[K\n{line2}\033[K\n{line3}\033[K")
+    forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, trainIn, trainOut, i)
+
+print(f"\nDone training in {elapsed_time:.4f}s\n")
 
 # Now let's test it !!!
 
@@ -275,6 +334,16 @@ def predict():
         if out[-1] == '.':
             break
     
-    print("Final Word: " + out[3:-1])
+    print("Final Word: " + out[3:-1] + "\n")
 
 predict()
+
+
+# Plot the embeddings, save it to a file
+plt.figure(figsize=(8,8))
+plt.scatter(charEncodings.data[:,0], charEncodings.data[:,1], s=200)
+for i in range(27):
+    plt.text(charEncodings.data[i,0], charEncodings.data[i,1], itos[i], ha="center", va="center", color="white")
+plt.grid("minor")
+plt.savefig("plots/embeddings.png")
+print("Image saved")
