@@ -1,7 +1,7 @@
 import math
 import random
 import numpy as np
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt # THIS ISN't FUNCTIONAL, IT's JUST TEMPORARY
 import time
 words = open('names.txt', 'r').read().splitlines()
 
@@ -83,6 +83,9 @@ class Value:
         out._backward = _backward
         return out
     
+    def __len__(self):
+        return len(self.data)
+    
     def tanh(self):
         x=self.data
         t = np.tanh(x)
@@ -161,21 +164,17 @@ def trunc(number, digits):
     return math.trunc(number * stepper) / stepper
 
 # defining weights
-W1 = Value(np.random.randn(6, 300))  # embedding_size * block_size -> hidden
-b1 = Value(np.zeros(300))
-W2 = Value(np.random.randn(300, 27))  # hidden -> logits
+W1 = Value(np.random.randn(30, 200) * (5/3) / (30**0.5))  # embedding_size * block_size -> hidden
+b1 = Value(np.zeros(200))
+W2 = Value(np.random.randn(200, 27) * 0.01)  # hidden -> logits
 b2 = Value(np.zeros(27))
-charEncodings = Value(np.random.randn(27,2))
+charEncodings = Value(np.random.randn(27,10)) #Increase to 10 dimensional embeddings
 
 parameters = [charEncodings, W1, b1, W2, b2] # for easy access during 
 
 stoi = {s:i for i,s in enumerate(sorted(list(set(''.join(words)))))}
 stoi['.']=26
 itos = {i:s for s,i in stoi.items()}
-
-lre = [i/333 - 3 for i in range(1000)]
-lrs = [10 ** lre[i] for i in range(1000)]
-lrs.reverse()
 
 blockSize = 3
 inputs, outputs = [],[]
@@ -198,7 +197,6 @@ devIn = inputs[n1:n2] # Development data (10%)
 devOut = outputs[n1:n2]
 testIn = inputs[n2:] #  Test data (10%)
 testOut = outputs[n2:]
-
 
 def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs, epoch=0):
     # Encode the inputs
@@ -231,8 +229,13 @@ def forward(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inp
 
     loss.backward()
 
+    if epoch < 150000:
+        lr = -.1
+    else:
+        lr = -.01
+
     for p in parameters:
-        p.data += -0.1 * p.grad
+        p.data += lr * p.grad
         p.grad = np.zeros_like(p.data, dtype=float)
 
 def forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, inputs, outputs, epoch=0):
@@ -264,12 +267,19 @@ def forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, paramete
 
     return loss
 
-epochs = 30000
+epochs = 200000
 START_TIME = time.perf_counter()
 print(f"Started training Makemore ({epochs} epochs)")
+trainTemp = -1
+testTemp = -1
 for i in range(epochs):
-    train_loss = trunc(forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, trainIn, trainOut, i).data, 3)
-    test_loss  = trunc(forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, testIn,  testOut,  i).data, 3)
+    if (i%100==0):
+        train_loss = trunc(forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, trainIn, trainOut, i).data, 3)
+        test_loss  = trunc(forwardNoTrain(Value, cross_entropy, W1, b1, W2, b2, charEncodings, parameters, testIn,  testOut,  i).data, 3)
+        trainTemp, testTemp = train_loss, test_loss
+    else:
+        train_loss = trainTemp
+        test_loss = trainTemp
     elapsed_time = time.perf_counter() - START_TIME
 
     line1 = f"Epoch: {i+1}/{epochs} {prog(i, epochs)}"
@@ -330,14 +340,14 @@ def predict():
         e = np.exp(logits.data)
         probs = e / e.sum(axis=1, keepdims=True)
         reverse = {v: k for k, v in stoi.items()} 
-        out += reverse[np.argmax(probs[0])]
+        out += reverse[np.random.choice(27, p=probs[0])]
         if out[-1] == '.':
             break
     
-    print("Final Word: " + out[3:-1] + "\n")
+    print(out[3:-1])
 
-predict()
-
+for i in range(20):
+    predict()
 
 # Plot the embeddings, save it to a file
 plt.figure(figsize=(8,8))
@@ -346,4 +356,4 @@ for i in range(27):
     plt.text(charEncodings.data[i,0], charEncodings.data[i,1], itos[i], ha="center", va="center", color="white")
 plt.grid("minor")
 plt.savefig("plots/embeddings.png")
-print("Image saved")
+# Embeddings are now pretty useless, since we're in 10 dimensions.
