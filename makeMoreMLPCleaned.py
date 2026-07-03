@@ -348,12 +348,3 @@ def predict():
 
 for i in range(20):
     predict()
-
-# Plot the embeddings, save it to a file
-plt.figure(figsize=(8,8))
-plt.scatter(charEncodings.data[:,0], charEncodings.data[:,1], s=200)
-for i in range(27):
-    plt.text(charEncodings.data[i,0], charEncodings.data[i,1], itos[i], ha="center", va="center", color="white")
-plt.grid("minor")
-plt.savefig("plots/embeddings.png")
-# Embeddings are now pretty useless, since we're in 10 dimensions.
