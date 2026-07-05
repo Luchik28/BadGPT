@@ -1,7 +1,7 @@
 import math
 import random
 import numpy as np
-import matplotlib.pyplot as plt # THIS ISN't FUNCTIONAL, IT's JUST TEMPORARY
+import matplotlib.pyplot as plt
 import time
 words = open('names.txt', 'r').read().splitlines()
 
