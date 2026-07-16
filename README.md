@@ -1,6 +1,6 @@
 ## Welcome to badGPT
 
-A (poorly) made LLM. It is made with just Python and no external libraries/dependencies (except for numPy)
+A (poorly) made LLM. It is made with just Python and no external libraries/dependencies (except for numPy). You can check out a demo [here](https://luchik28.github.io/BadGPT/).
 
 I need numPy for efficient matrix multiplication, as trying to do that in just python would be too slow (each training pass would take hours as opposed to like seconds). numPy does this in C, which is faster, but that's a bit out of the scope for this project so I'm just using numPy.
 
