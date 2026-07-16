@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>badGPT</title>
+<style>
+  body {
+    font-family: ui-monospace, "SF Mono", Consolas, monospace;
+    color: #000000;
+    max-width: 640px;
+    margin: 4rem auto;
+    padding: 0 1.5rem;
+    text-align: left;
+  }
+  h1 { margin-bottom: 0.25rem; }
+  p.sub { color: #383838; margin-top: 0; }
+  button {
+    font-family: inherit;
+    font-size: 1rem;
+    background: #696969;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.6rem 1.4rem;
+    cursor: pointer;
+  }
+  button:disabled { background: #30363d; cursor: default; }
+  button:hover:not(:disabled) { background: #353535; }
+  #status { color: #8b949e; margin-top: 0.75rem; min-height: 1.2em; }
+  #names {
+    list-style: none;
+    padding: 0;
+    margin-top: 2rem;
+    text-align: left;
+    display: inline-block;
+  }
+  #names li {
+    font-size: 1.2rem;
+    padding: 0.3rem 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>badGPT</h1>
+<p class="sub">This is my attempt at making an LLM with just python and numPy. However, that's really hard, and so I've started with a small character-level name generator.</p>
+
+<button id="generateBtn" disabled>Loading model...</button>
+<div id="status"></div>
+<ul id="names"></ul>
+
+<h3>A few notes:</h3>
+<ul class="sub">
+  <li>Sometimes the model may output something random, like nothing at all or just a letter. So keep pressing the button until a sensical name pops up.</li>
+  <li>Overall, the finished product is rather unimpressive (unless you have a similar taste in names to Elon); I highly suggest you check out the <a href="https://github.com/Luchik28/BadGPT">Github Repository</a>, which is a little more interesting.</li>
+  <li>I got a lot of inspiration (and the names dataset) from Andrej Karpathy's <a href="https://www.youtube.com/watch?v=VMj-3S1tku0&list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ&index=1">Nueral Networks series</a>. It was really helpful and fun to watch so you should check it out.</li>
+</ul>
+
+<script>
+let model = null;
+
+// Flatten a possibly-nested array down to a flat list of numbers. The Python
+// exporter can emit batchnorm running stats as [[...]] (shape (1, dim)) instead
+// of [...] once training has broadcast them to 2-D; flattening here keeps a
+// stale weights.json working instead of silently producing NaNs.
+function flatten(arr) {
+  return Array.isArray(arr[0]) ? arr.flat(Infinity) : arr;
+}
+
+// out[j] = sum_i vec[i] * weight[i][j]
+function matVec(weight, vec) {
+  const fanOut = weight[0].length;
+  const out = new Array(fanOut).fill(0);
+  for (let i = 0; i < vec.length; i++) {
+    const wi = weight[i];
+    const vi = vec[i];
+    for (let j = 0; j < fanOut; j++) {
+      out[j] += vi * wi[j];
+    }
+  }
+  return out;
+}
+
+function applyLayer(layer, x) {
+  if (layer.type === "linear") {
+    let out = matVec(layer.weight, x);
+    if (layer.bias) out = out.map((v, j) => v + layer.bias[j]);
+    return out;
+  }
+  if (layer.type === "batchnorm") {
+    const mean = flatten(layer.runningMean);
+    const varr = flatten(layer.runningVar);
+    const gamma = flatten(layer.gamma);
+    const beta = flatten(layer.beta);
+    return x.map((v, i) => {
+      const xhat = (v - mean[i]) / Math.sqrt(varr[i] + layer.eps);
+      return xhat * gamma[i] + beta[i];
+    });
+  }
+  if (layer.type === "tanh") {
+    return x.map(Math.tanh);
+  }
+  throw new Error("unknown layer type: " + layer.type);
+}
+
+function softmax(logits) {
+  const max = Math.max(...logits);
+  const exps = logits.map(v => Math.exp(v - max));
+  const sum = exps.reduce((a, b) => a + b, 0);
+  return exps.map(v => v / sum);
+}
+
+function sampleIndex(probs) {
+  const r = Math.random();
+  let cum = 0;
+  for (let i = 0; i < probs.length; i++) {
+    cum += probs[i];
+    if (r < cum) return i;
+  }
+  return probs.length - 1;
+}
+
+function generateName() {
+  const { blockSize, vocabSize, itos, C, layers } = model;
+  const dotIndex = vocabSize - 1; // '.' is the last token in this project's vocab
+  let context = new Array(blockSize).fill(dotIndex);
+  let result = "";
+
+  for (let step = 0; step < 40; step++) {
+    let x = [];
+    for (const idx of context) x = x.concat(C[idx]);
+    for (const layer of layers) x = applyLayer(layer, x);
+
+    const probs = softmax(x);
+    const ix = sampleIndex(probs);
+    if (ix === dotIndex) break;
+
+    result += itos[String(ix)];
+    context = context.slice(1).concat([ix]);
+  }
+  return result || "(empty)";
+}
+
+async function loadModel() {
+  const status = document.getElementById("status");
+  const btn = document.getElementById("generateBtn");
+  try {
+    const res = await fetch("weights.json");
+    if (!res.ok) throw new Error(res.status);
+    model = await res.json();
+    btn.textContent = "Generate a name";
+    btn.disabled = false;
+  } catch (err) {
+    status.textContent = "Couldn't load weights.json — run the export cell in the notebook first, and serve this folder over http:// (not file://).";
+  }
+}
+
+document.getElementById("generateBtn").addEventListener("click", () => {
+  const li = document.createElement("li");
+  li.textContent = generateName();
+  const namesList = document.getElementById("names");
+  namesList.prepend(li);
+  while (namesList.children.length > 8) {
+    namesList.removeChild(namesList.lastChild);
+  }
+});
+
+loadModel();
+</script>
+
+</body>
+</html>
