@@ -298,3 +298,19 @@ class Sequential:
   def parameters(self):
     # get parameters of all layers and stretch them out into one list
     return [p for layer in self.layers for p in layer.parameters()]
+
+class BagOfWords:
+  """Averages each token's embedding with all the ones before it (causal mean)."""
+
+  def __init__(self, block_size):
+    wei = np.tril(np.ones((block_size, block_size)))
+    self.wei = Value(wei / wei.sum(1, keepdims=True)) # rows sum to 1
+
+  def __call__(self, x):
+    B, T, C = x.shape
+    self.out = self.wei[:T, :T] @ x if T != self.wei.shape[0] else self.wei @ x
+    return self.out
+
+  def parameters(self):
+    return [] # wei is a fixed constant, not learned
+
