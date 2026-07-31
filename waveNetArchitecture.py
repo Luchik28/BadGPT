@@ -110,6 +110,49 @@ class Value:
         out._backward = _backward
         return out
 
+    def transpose(self, dim0=-2, dim1=-1):
+        # PyTorch-style: swaps two axes. NOT numpy's transpose, which wants a full permutation
+        out = Value(np.swapaxes(self.data, dim0, dim1), (self, ), "transpose")
+
+        def _backward():
+            self.grad += np.swapaxes(out.grad, dim0, dim1) # swapping is its own inverse
+
+        out._backward = _backward
+        return out
+
+    def masked_fill(self, mask, value):
+        out = Value(np.where(mask, value, self.data), (self, ), "masked_fill")
+
+        def _backward():
+            self.grad += np.where(mask, 0.0, out.grad) # masked entries contribute nothing
+
+        out._backward = _backward
+        return out
+
+    def softmax(self, axis=-1):
+        e = np.exp(self.data - self.data.max(axis=axis, keepdims=True)) # subtract max for stability
+        p = e / e.sum(axis=axis, keepdims=True)
+        out = Value(p, (self, ), "softmax")
+
+        def _backward():
+            self.grad += p * (out.grad - (out.grad * p).sum(axis=axis, keepdims=True))
+
+        out._backward = _backward
+        return out
+
+    @staticmethod
+    def cat(values, axis=-1):
+        out = Value(np.concatenate([v.data for v in values], axis=axis), tuple(values), "cat")
+        sizes = [v.data.shape[axis] for v in values]
+
+        def _backward():
+            splits = np.split(out.grad, np.cumsum(sizes)[:-1], axis=axis)
+            for v, g in zip(values, splits):
+                v.grad += g
+
+        out._backward = _backward
+        return out
+
     def squeeze(self, axis=None):
         out = Value(np.squeeze(self.data, axis=axis), (self, ), "squeeze")
 
@@ -166,21 +209,33 @@ def oneHot(c):
     out[curIndex] = 1
     return out
 def cross_entropy(logits, targets):
-    e = np.exp(logits.data)
+    # logits: (N, vocab) or (B, T, vocab); targets: (N,) or (B, T) - either shape works,
+    # attention-based models predict at every position so logits come in 3D
+    orig_shape = logits.data.shape
+    targets = np.asarray(targets)
+    if logits.data.ndim == 3:
+        B, T, V = orig_shape
+        flat_logits = logits.data.reshape(B * T, V)
+        flat_targets = targets.reshape(B * T)
+    else:
+        flat_logits = logits.data
+        flat_targets = targets
+
+    e = np.exp(flat_logits - flat_logits.max(axis=1, keepdims=True)) # subtract max: avoids overflow on large logits
     probs = e / e.sum(axis=1, keepdims=True)
-    
-    correct_probs = probs[np.arange(len(targets)), targets]
+
+    correct_probs = probs[np.arange(len(flat_targets)), flat_targets]
     loss = -np.log(correct_probs).mean()
-    
+
     out = Value(loss, (logits,), "cross_entropy")
-    
+
     def _backward():
         # gradient of cross entropy + softmax combined is just (probs - 1_correct) / batch_size
         dlogits = probs.copy()
-        dlogits[np.arange(len(targets)), targets] -= 1
-        dlogits /= len(targets)
-        logits.grad += dlogits
-    
+        dlogits[np.arange(len(flat_targets)), flat_targets] -= 1
+        dlogits /= len(flat_targets)
+        logits.grad += dlogits.reshape(orig_shape)
+
     out._backward = _backward
     return out
 def prog(val, total):
@@ -248,6 +303,48 @@ class BatchNorm1D:
     def parameters(self):
         return [self.gamma, self.beta]
 
+class LayerNorm:
+    """Normalizes each token's own feature vector, independent of the batch.
+
+    Unlike BatchNorm1D, this needs no running stats and no train/eval switch -
+    every token is normalized the same way whether it's alone (batch size 1,
+    e.g. during generation) or in a big batch.
+    """
+
+    def __init__(self, dim, eps=1e-5):
+        self.eps = eps
+        self.gamma = Value(np.ones(dim))
+        self.beta = Value(np.zeros(dim))
+
+    def __call__(self, x):
+        N = x.data.shape[-1]
+        mu = x.data.mean(axis=-1, keepdims=True)
+        xmu = x.data - mu
+        var = (xmu ** 2).mean(axis=-1, keepdims=True)
+        std_inv = 1.0 / np.sqrt(var + self.eps)
+        xhat = xmu * std_inv
+
+        out = Value(self.gamma.data * xhat + self.beta.data, (x, self.gamma, self.beta), "layernorm")
+
+        def _backward():
+            dy = out.grad
+            self.gamma.grad += Value._unbroadcast(dy * xhat, self.gamma.data.shape)
+            self.beta.grad += Value._unbroadcast(dy, self.beta.data.shape)
+
+            # exact layernorm backward: mu and var both depend on x, unlike a plain (x-mean)/std
+            # composed from ops that treat mean/var as constants (that shortcut undercounts the
+            # gradient - it's what BatchNorm1D above does, and it doesn't hold up under gradcheck)
+            dxhat = dy * self.gamma.data
+            dvar = np.sum(dxhat * xmu * -0.5 * std_inv ** 3, axis=-1, keepdims=True)
+            dmu = np.sum(dxhat * -std_inv, axis=-1, keepdims=True) + dvar * np.mean(-2.0 * xmu, axis=-1, keepdims=True)
+            x.grad += dxhat * std_inv + dvar * 2.0 * xmu / N + dmu / N
+
+        out._backward = _backward
+        return out
+
+    def parameters(self):
+        return [self.gamma, self.beta]
+
 class Tanh:
     def __call__(self, x):
         self.out = x.tanh()
@@ -265,6 +362,19 @@ class Embedding:
     self.out = self.weight[IX] # Value.__getitem__ keeps this in the autograd graph
     return self.out
   
+  def parameters(self):
+    return [self.weight]
+
+class PositionalEmbedding:
+  def __init__(self, block_size, embedding_dim):
+    rng = np.random
+    self.weight = Value(rng.standard_normal((block_size, embedding_dim)))
+
+  def __call__(self, x):
+    B, T, C = x.shape
+    self.out = x + self.weight[:T] # (T,C) broadcasts over the batch dim
+    return self.out
+
   def parameters(self):
     return [self.weight]
 
@@ -314,3 +424,88 @@ class BagOfWords:
   def parameters(self):
     return [] # wei is a fixed constant, not learned
 
+class Head:
+  """One head of causal self-attention."""
+
+  def __init__(self, n_embd, head_size, block_size):
+    self.key   = Linear(n_embd, head_size, bias=False)
+    self.query = Linear(n_embd, head_size, bias=False)
+    self.value = Linear(n_embd, head_size, bias=False)
+    self.head_size = head_size
+    self.mask = np.triu(np.ones((block_size, block_size), dtype=bool), k=1) # True = future
+
+  def __call__(self, x):
+    B, T, C = x.shape
+    k = self.key(x)   # (B,T,hs) what each token offers
+    q = self.query(x) # (B,T,hs) what each token is looking for
+    v = self.value(x) # (B,T,hs) what each token actually passes along
+
+    wei = (q @ k.transpose(-2, -1)) * self.head_size**-0.5 # (B,T,T) affinities
+    wei = wei.masked_fill(self.mask[:T, :T], -np.inf)      # no peeking ahead
+    wei = wei.softmax(axis=-1)                             # rows become a distribution
+
+    self.out = wei @ v
+    return self.out
+
+  def parameters(self):
+    return self.key.parameters() + self.query.parameters() + self.value.parameters()
+
+class MultiHead:
+  """Runs several attention heads in parallel, then combines their outputs.
+
+  Each head asks its own version of "what's relevant to me" - one might learn
+  to track the previous vowel, another the subject of the sentence. Splitting
+  n_embd across heads (rather than giving every head the full width) keeps the
+  total compute roughly the same as a single big head.
+  """
+
+  def __init__(self, n_embd, num_heads, block_size):
+    assert n_embd % num_heads == 0, "n_embd must divide evenly across heads"
+    head_size = n_embd // num_heads
+    self.heads = [Head(n_embd, head_size, block_size) for _ in range(num_heads)]
+    self.proj = Linear(n_embd, n_embd)
+
+  def __call__(self, x):
+    self.out = self.proj(Value.cat([h(x) for h in self.heads], axis=-1))
+    return self.out
+
+  def parameters(self):
+    return [p for h in self.heads for p in h.parameters()] + self.proj.parameters()
+
+class FeedForward:
+  """Per-token MLP: attention only moves information between tokens, this is
+  where the model actually computes something with what it gathered."""
+
+  def __init__(self, n_embd, expansion=4):
+    self.net = Sequential([
+      Linear(n_embd, expansion * n_embd),
+      Tanh(),
+      Linear(expansion * n_embd, n_embd),
+    ])
+
+  def __call__(self, x):
+    self.out = self.net(x)
+    return self.out
+
+  def parameters(self):
+    return self.net.parameters()
+
+class Block:
+  """One transformer block: communicate (attention), then compute (feedforward),
+  each wrapped in a residual connection so gradients have a direct path back
+  through however many blocks get stacked."""
+
+  def __init__(self, n_embd, num_heads, block_size):
+    self.ln1 = LayerNorm(n_embd)
+    self.attn = MultiHead(n_embd, num_heads, block_size)
+    self.ln2 = LayerNorm(n_embd)
+    self.ff = FeedForward(n_embd)
+
+  def __call__(self, x):
+    x = x + self.attn(self.ln1(x))
+    x = x + self.ff(self.ln2(x))
+    self.out = x
+    return self.out
+
+  def parameters(self):
+    return self.ln1.parameters() + self.attn.parameters() + self.ln2.parameters() + self.ff.parameters()
