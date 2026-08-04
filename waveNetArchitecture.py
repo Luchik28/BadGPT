@@ -162,6 +162,16 @@ class Value:
         out._backward = _backward
         return out
     
+    def relu(self):
+        x = self.data
+
+        def _backward():
+            self.grad += (x > 0) * out.grad # gradient passes through where x was positive, zero elsewhere
+
+        out = Value(np.maximum(0.0, x), (self, ), "relu")
+        out._backward = _backward
+        return out
+
     def tanh(self):
         x=self.data
         t = np.tanh(x)
@@ -304,12 +314,6 @@ class BatchNorm1D:
         return [self.gamma, self.beta]
 
 class LayerNorm:
-    """Normalizes each token's own feature vector, independent of the batch.
-
-    Unlike BatchNorm1D, this needs no running stats and no train/eval switch -
-    every token is normalized the same way whether it's alone (batch size 1,
-    e.g. during generation) or in a big batch.
-    """
 
     def __init__(self, dim, eps=1e-5):
         self.eps = eps
@@ -351,7 +355,14 @@ class Tanh:
         return self.out
     def parameters(self):
         return []
-    
+
+class ReLU:
+    def __call__(self, x):
+        self.out = x.relu()
+        return self.out
+    def parameters(self):
+        return []
+
 class Embedding:
   
   def __init__(self, num_embeddings, embedding_dim):
@@ -479,7 +490,7 @@ class FeedForward:
   def __init__(self, n_embd, expansion=4):
     self.net = Sequential([
       Linear(n_embd, expansion * n_embd),
-      Tanh(),
+      ReLU(), # not Tanh: tanh saturates in the 4x-wide layer and its gradient goes to zero there
       Linear(expansion * n_embd, n_embd),
     ])
 
@@ -502,7 +513,7 @@ class Block:
     self.ff = FeedForward(n_embd)
 
   def __call__(self, x):
-    x = x + self.attn(self.ln1(x))
+    x = x + self.attn(self.ln1(x)) # Residual connection, to fix optimization issues
     x = x + self.ff(self.ln2(x))
     self.out = x
     return self.out
