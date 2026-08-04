@@ -520,3 +520,43 @@ class Block:
 
   def parameters(self):
     return self.ln1.parameters() + self.attn.parameters() + self.ln2.parameters() + self.ff.parameters()
+
+class AdamW:
+
+  def __init__(self, parameters, lr=1e-3, betas=(0.9, 0.95), eps=1e-8, weight_decay=0.01):
+    self.parameters = parameters
+    self.lr = lr
+    self.beta1, self.beta2 = betas
+    self.eps = eps
+    self.weight_decay = weight_decay
+    self.t = 0 # step counter, for bias correction
+    self.m = [np.zeros_like(p.data, dtype=float) for p in parameters]
+    self.v = [np.zeros_like(p.data, dtype=float) for p in parameters]
+    self.decay = [p.data.ndim >= 2 for p in parameters]
+    self.ud = []
+
+  def zero_grad(self):
+    for p in self.parameters:
+      p.grad = np.zeros_like(p.data, dtype=float)
+
+  def step(self, lr=None):
+    lr = self.lr if lr is None else lr
+    self.t += 1
+    bc1 = 1 - self.beta1 ** self.t
+    bc2 = 1 - self.beta2 ** self.t
+    self.ud = []
+
+    for i, p in enumerate(self.parameters):
+      g = p.grad
+      self.m[i] = self.beta1 * self.m[i] + (1 - self.beta1) * g
+      self.v[i] = self.beta2 * self.v[i] + (1 - self.beta2) * g * g
+
+      mhat = self.m[i] / bc1
+      vhat = self.v[i] / bc2
+
+      if self.weight_decay and self.decay[i]:
+        p.data -= lr * self.weight_decay * p.data
+
+      upd = lr * mhat / (np.sqrt(vhat) + self.eps)
+      p.data -= upd
+      self.ud.append(np.log10(np.std(upd) / (np.std(p.data) + 1e-12)))
