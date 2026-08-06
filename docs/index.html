@@ -39,9 +39,43 @@
     font-size: 1.2rem;
     padding: 0.3rem 0;
   }
+  nav#tabs {
+    display: flex;
+    gap: 0.25rem;
+    border-bottom: 1px solid #d8d8d8;
+    margin-bottom: 2.5rem;
+  }
+  nav#tabs button {
+    background: none;
+    color: #383838;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.95rem;
+  }
+  nav#tabs button:hover:not(.active) { background: none; color: #000000; }
+  nav#tabs button.active { background: none; color: #000000; border-bottom-color: #696969; }
+  #shakespeare {
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.5;
+    margin-top: 2rem;
+    border-left: 2px solid #d8d8d8;
+    padding-left: 1rem;
+  }
+  #shakespeare:empty { display: none; }
 </style>
 </head>
 <body>
+
+<nav id="tabs">
+  <button class="tab active" data-panel="panel-names">name generator</button>
+  <button class="tab" data-panel="panel-gpt">shakespeare</button>
+</nav>
+
+<section id="panel-names">
 
 <h1>badGPT</h1>
 <p class="sub">This is my attempt at making an LLM with just python and numPy. However, that's really hard, and so I've started with a small character-level name generator.</p>
@@ -56,6 +90,27 @@
   <li>Overall, the finished product is rather unimpressive (unless you have a similar taste in names to Elon); I highly suggest you check out the <a href="https://github.com/Luchik28/BadGPT">Github Repository</a>, which is a little more interesting.</li>
   <li>I got a lot of inspiration (and the names dataset) from Andrej Karpathy's <a href="https://www.youtube.com/watch?v=VMj-3S1tku0&list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ&index=1">Nueral Networks series</a>. It was really helpful and fun to watch so you should check it out.</li>
 </ul>
+
+</section>
+
+<section id="panel-gpt" hidden>
+
+<h1>badGPT v2</h1>
+<p class="sub">This one is an actual transformer &mdash; self-attention, residual connections and all &mdash; still written with nothing but python and numPy. It read Shakespeare one character at a time and learned to write more of him. Badly.</p>
+
+<button id="gptBtn" disabled>Loading model...</button>
+<div id="gptStatus"></div>
+<pre id="shakespeare"></pre>
+
+<h3>A few notes:</h3>
+<ul class="sub">
+  <li>56,769 parameters, 4 transformer blocks of 4 attention heads each, and 64 characters of context. For scale, GPT-3 had about three million times as many parameters.</li>
+  <li>Trained for 30,000 steps on the ~1.1 million characters of <a href="https://github.com/Luchik28/BadGPT/blob/main/shakespear.txt">shakespear.txt</a>, which took roughly 20 hours on a CPU. It finished at 1.55 train / 1.76 validation loss, down from 4.17 at the start.</li>
+  <li>It never saw a dictionary, so it has to spell every word from scratch. What it learned best is the <em>shape</em> of a play: capitalized names, colons, and people taking turns to speak.</li>
+  <li>The whole forward pass runs in your browser, one character at a time, so give it a couple of seconds to get going.</li>
+</ul>
+
+</section>
 
 <script>
 let model = null;
@@ -167,6 +222,75 @@ document.getElementById("generateBtn").addEventListener("click", () => {
 });
 
 loadModel();
+</script>
+
+<script src="gpt.js"></script>
+<script>
+// Tabs + the transformer panel. Wrapped in an IIFE so none of these names
+// collide with the name generator's globals above.
+(function () {
+  const btn = document.getElementById("gptBtn");
+  const status = document.getElementById("gptStatus");
+  const out = document.getElementById("shakespeare");
+  let net = null;
+  let loading = null;
+  let busy = false;
+
+  // Only fetched the first time the tab is opened - it's ~600KB, and someone
+  // who never leaves the names tab shouldn't pay for it.
+  function loadGPT() {
+    if (loading) return loading;
+    status.textContent = "Loading the model (~600KB)...";
+    loading = fetch("gptWeights.json")
+      .then(res => {
+        if (!res.ok) throw new Error(res.status);
+        return res.json();
+      })
+      .then(json => {
+        net = BadGPT.prepare(json);
+        status.textContent = "";
+        btn.textContent = "Write some Shakespeare";
+        btn.disabled = false;
+      })
+      .catch(() => {
+        status.textContent = "Couldn't load gptWeights.json — run the export cell in GPT.ipynb first, and serve this folder over http:// (not file://).";
+      });
+    return loading;
+  }
+
+  btn.addEventListener("click", async () => {
+    if (busy || !net) return;
+    busy = true;
+    btn.disabled = true;
+    btn.textContent = "Writing...";
+    out.textContent = "";
+
+    await BadGPT.generate(net, {
+      length: 400,
+      onChunk: async (chunk, done, total) => {
+        out.textContent += chunk;
+        status.textContent = Math.round((done / total) * 100) + "%";
+        // hand the thread back so the page actually paints each batch
+        await new Promise(requestAnimationFrame);
+      },
+    });
+
+    status.textContent = "";
+    btn.textContent = "Write some more";
+    btn.disabled = false;
+    busy = false;
+  });
+
+  document.querySelectorAll("#tabs button").forEach(tab => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll("#tabs button").forEach(t => t.classList.toggle("active", t === tab));
+      document.querySelectorAll("section[id^='panel-']").forEach(p => {
+        p.hidden = p.id !== tab.dataset.panel;
+      });
+      if (tab.dataset.panel === "panel-gpt") loadGPT();
+    });
+  });
+})();
 </script>
 
 </body>
