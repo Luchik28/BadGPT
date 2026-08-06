@@ -33,15 +33,15 @@
   }
   button:disabled { background: #30363d; cursor: default; }
   button:hover:not(:disabled) { background: #353535; }
-  #status { color: #8b949e; margin-top: 0.75rem; min-height: 1.2em; }
-  #names {
+  .status { color: #8b949e; margin-top: 0.75rem; min-height: 1.2em; }
+  .names {
     list-style: none;
     padding: 0;
     margin-top: 2rem;
     text-align: left;
     display: inline-block;
   }
-  #names li {
+  .names li {
     font-size: 1.2rem;
     padding: 0.3rem 0;
   }
@@ -78,6 +78,7 @@
 
 <nav id="tabs">
   <button class="tab active" data-panel="panel-names">name generator</button>
+  <button class="tab" data-panel="panel-wavenet">wavenet</button>
   <button class="tab" data-panel="panel-gpt">shakespeare</button>
 </nav>
 
@@ -87,8 +88,8 @@
 <p class="sub">This is my attempt at making an LLM with just python and numPy. However, that's really hard, and so I've started with a small character-level name generator.</p>
 
 <button id="generateBtn" disabled>Loading model...</button>
-<div id="status"></div>
-<ul id="names"></ul>
+<div id="status" class="status"></div>
+<ul id="names" class="names"></ul>
 
 <h3>A few notes:</h3>
 <ul class="sub">
@@ -99,19 +100,35 @@
 
 </section>
 
-<section id="panel-gpt" hidden>
+<section id="panel-wavenet" hidden>
 
 <h1>badGPT v2</h1>
-<p class="sub">This is an improvement on the name generator, but it still does essentially the same thing, make more of stuff (except instead of names, it's shakespear!). The architecture is still a bigram model, but it includes self attention.</p>
+<p class="sub">This version still generates names except it's a wavenet model. This means that the context is gradually combined over several layers, as apposed to all at once like the previous model.</p>
+
+<button id="wavenetBtn" disabled>Loading model...</button>
+<div id="wavenetStatus" class="status"></div>
+<ul id="wavenetNames" class="names"></ul>
+
+<h3>A few notes:</h3>
+<ul class="sub">
+  <li>It gets 8 characters of context instead of 3, folded together two at a time (8 &rarr; 4 &rarr; 2 &rarr; 1), so every layer only ever compares neighbours. It has 45,597 parameters.</li>
+  <li>This model performs markedly worse than the last one, unfortunately, despite the fancier architecture.</li>
+</ul>
+
+</section>
+
+<section id="panel-gpt" hidden>
+
+<h1>badGPT v3</h1>
+<p class="sub">This is an improvement on the name generator, but it still does essentially the same thing, make more of stuff (except instead of names, it's shakespear!). The architecture is very different from the bigram and wavenet models, as it includes self attention.</p>
 
 <button id="gptBtn" disabled>Loading model...</button>
-<div id="gptStatus"></div>
+<div id="gptStatus" class="status"></div>
 <pre id="shakespeare"></pre>
 
 <h3>A few notes:</h3>
 <ul class="sub">
-  <li>Yes, I know it's bad. But pay attention to how it gets the general structure right, and the words have like mostly complete syllables, they just haven't come together quite right.</li>
-  <li>In between the name generator and this version, I did build a wavenet model, but switched back to implement self attention.</li>
+  <li>Is shakespear really dead? Yes, clearly. But pay attention to how it gets the general structure right, and the words have mostly complete syllables, they just haven't come together quite right.</li>
   <li>This model includes 56,769 parameters, 4 transformer blocks of 4 attention heads each, and 64 characters of context. For scale, GPT-3 had about three million times as many parameters.</li>
   <li>This model was trained on 1.1 million characters of <a href="https://github.com/Luchik28/BadGPT/blob/main/shakespear.txt">shakespear.txt</a>, which took roughly 20 hours on my CPU. It finished at 1.55 train / 1.76 validation loss, down from 4.14 at the start.</li>
   <li>In terms of progress towards building a chatGPT-like thing, this is about half of it. It completes documents, just not question-answer documents. To get to something that could answer questions, I would have to train it on a dataset of question-answer examples.</li>
@@ -120,12 +137,10 @@
 </section>
 
 <script>
-let model = null;
-
 // Flatten a possibly-nested array down to a flat list of numbers. The Python
 // exporter can emit batchnorm running stats as [[...]] (shape (1, dim)) instead
 // of [...] once training has broadcast them to 2-D; flattening here keeps a
-// stale weights.json working instead of silently producing NaNs.
+// stale export working instead of silently producing NaNs.
 function flatten(arr) {
   return Array.isArray(arr[0]) ? arr.flat(Infinity) : arr;
 }
@@ -145,9 +160,10 @@ function matVec(weight, vec) {
 }
 
 // Group every n consecutive rows into one wider row - the JS side of
-// FlattenConsecutive. This model is a wavenet-style tree, not a flat MLP: the
-// 8 context characters get merged in pairs (8x10 -> 4x20 -> 2x100 -> 1x200),
-// so activations have to stay a list of rows rather than one long vector.
+// FlattenConsecutive. Keeping activations as a list of rows (rather than one
+// long vector) is what lets the same code run both name models: the first one
+// merges all 3 characters at once (3x10 -> 1x30), the wavenet merges them in
+// pairs (8x10 -> 4x20 -> 2x100 -> 1x200).
 function flattenConsecutive(rows, n) {
   const out = [];
   for (let i = 0; i < rows.length; i += n) {
@@ -207,51 +223,74 @@ function sampleIndex(probs) {
   return probs.length - 1;
 }
 
-function generateName() {
-  const { blockSize, vocabSize, itos, C, layers } = model;
-  const dotIndex = vocabSize - 1; // '.' is the last token in this project's vocab
-  let context = new Array(blockSize).fill(dotIndex);
-  let result = "";
+// Both name models end the same way - embeddings in, one row of logits out -
+// so one implementation drives both tabs. Only the weights file differs.
+function nameGenerator(opts) {
+  const btn = document.getElementById(opts.btn);
+  const status = document.getElementById(opts.status);
+  const list = document.getElementById(opts.list);
+  let model = null;
+  let loading = null;
 
-  for (let step = 0; step < 40; step++) {
-    let rows = context.map(idx => C[idx]); // (blockSize, nEmbd) - one embedding per row
-    for (const layer of layers) rows = applyLayer(layer, rows);
+  function generateName() {
+    const { blockSize, vocabSize, itos, C, layers } = model;
+    const dotIndex = vocabSize - 1; // '.' is the last token in this project's vocab
+    let context = new Array(blockSize).fill(dotIndex);
+    let result = "";
 
-    const probs = softmax(rows[0]); // the tree has merged everything down to one row
-    const ix = sampleIndex(probs);
-    if (ix === dotIndex) break;
+    for (let step = 0; step < 40; step++) {
+      let rows = context.map(idx => C[idx]); // (blockSize, nEmbd) - one embedding per row
+      for (const layer of layers) rows = applyLayer(layer, rows);
 
-    result += itos[String(ix)];
-    context = context.slice(1).concat([ix]);
+      const probs = softmax(rows[0]); // everything has merged down to one row by now
+      const ix = sampleIndex(probs);
+      if (ix === dotIndex) break;
+
+      result += itos[String(ix)];
+      context = context.slice(1).concat([ix]);
+    }
+    return result || "(empty)";
   }
-  return result || "(empty)";
+
+  function load() {
+    if (loading) return loading;
+    loading = fetch(opts.weights)
+      .then(res => {
+        if (!res.ok) throw new Error(res.status);
+        return res.json();
+      })
+      .then(json => {
+        model = json;
+        btn.textContent = "Generate a name";
+        btn.disabled = false;
+      })
+      .catch(() => {
+        status.textContent = "Couldn't load " + opts.weights + " — run the export cell in the notebook first, and serve this folder over http:// (not file://).";
+      });
+    return loading;
+  }
+
+  btn.addEventListener("click", () => {
+    if (!model) return;
+    const li = document.createElement("li");
+    li.textContent = generateName();
+    list.prepend(li);
+    while (list.children.length > 8) {
+      list.removeChild(list.lastChild);
+    }
+  });
+
+  return { load: load };
 }
 
-async function loadModel() {
-  const status = document.getElementById("status");
-  const btn = document.getElementById("generateBtn");
-  try {
-    const res = await fetch("weights.json");
-    if (!res.ok) throw new Error(res.status);
-    model = await res.json();
-    btn.textContent = "Generate a name";
-    btn.disabled = false;
-  } catch (err) {
-    status.textContent = "Couldn't load weights.json — run the export cell in the notebook first, and serve this folder over http:// (not file://).";
-  }
-}
-
-document.getElementById("generateBtn").addEventListener("click", () => {
-  const li = document.createElement("li");
-  li.textContent = generateName();
-  const namesList = document.getElementById("names");
-  namesList.prepend(li);
-  while (namesList.children.length > 8) {
-    namesList.removeChild(namesList.lastChild);
-  }
+const bigramPanel = nameGenerator({
+  weights: "bigramWeights.json", btn: "generateBtn", status: "status", list: "names",
+});
+const wavenetPanel = nameGenerator({
+  weights: "wavenetWeights.json", btn: "wavenetBtn", status: "wavenetStatus", list: "wavenetNames",
 });
 
-loadModel();
+bigramPanel.load(); // the visible tab loads right away; the others wait to be opened
 </script>
 
 <script src="gpt.js"></script>
@@ -318,6 +357,7 @@ loadModel();
         p.hidden = p.id !== tab.dataset.panel;
       });
       if (tab.dataset.panel === "panel-gpt") loadGPT();
+      if (tab.dataset.panel === "panel-wavenet") wavenetPanel.load();
     });
   });
 })();
