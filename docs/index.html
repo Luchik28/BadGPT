@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>badGPT</title>
 <style>
+  /* the page still scrolls, the scrollbar just doesn't draw */
+  html {
+    scrollbar-width: none;      /* firefox */
+    -ms-overflow-style: none;   /* old edge/ie */
+  }
+  html::-webkit-scrollbar { display: none; } /* chrome, safari */
   body {
     font-family: ui-monospace, "SF Mono", Consolas, monospace;
     color: #000000;
@@ -96,7 +102,7 @@
 <section id="panel-gpt" hidden>
 
 <h1>badGPT v2</h1>
-<p class="sub">This one is an actual transformer &mdash; self-attention, residual connections and all &mdash; still written with nothing but python and numPy. It read Shakespeare one character at a time and learned to write more of him. Badly.</p>
+<p class="sub">This is an improvement on the name generator, but it still does essentially the same thing, make more of stuff (except instead of names, it's shakespear!). The architecture is still a bigram model, but it includes self attention.</p>
 
 <button id="gptBtn" disabled>Loading model...</button>
 <div id="gptStatus"></div>
@@ -104,10 +110,11 @@
 
 <h3>A few notes:</h3>
 <ul class="sub">
-  <li>56,769 parameters, 4 transformer blocks of 4 attention heads each, and 64 characters of context. For scale, GPT-3 had about three million times as many parameters.</li>
-  <li>Trained for 30,000 steps on the ~1.1 million characters of <a href="https://github.com/Luchik28/BadGPT/blob/main/shakespear.txt">shakespear.txt</a>, which took roughly 20 hours on a CPU. It finished at 1.55 train / 1.76 validation loss, down from 4.17 at the start.</li>
-  <li>It never saw a dictionary, so it has to spell every word from scratch. What it learned best is the <em>shape</em> of a play: capitalized names, colons, and people taking turns to speak.</li>
-  <li>The whole forward pass runs in your browser, one character at a time, so give it a couple of seconds to get going.</li>
+  <li>Yes, I know it's bad. But pay attention to how it gets the general structure right, and the words have like mostly complete syllables, they just haven't come together quite right.</li>
+  <li>In between the name generator and this version, I did build a wavenet model, but switched back to implement self attention.</li>
+  <li>This model includes 56,769 parameters, 4 transformer blocks of 4 attention heads each, and 64 characters of context. For scale, GPT-3 had about three million times as many parameters.</li>
+  <li>This model was trained on 1.1 million characters of <a href="https://github.com/Luchik28/BadGPT/blob/main/shakespear.txt">shakespear.txt</a>, which took roughly 20 hours on my CPU. It finished at 1.55 train / 1.76 validation loss, down from 4.14 at the start.</li>
+  <li>In terms of progress towards building a chatGPT-like thing, this is about half of it. It completes documents, just not question-answer documents. To get to something that could answer questions, I would have to train it on a dataset of question-answer examples.</li>
 </ul>
 
 </section>
@@ -137,24 +144,48 @@ function matVec(weight, vec) {
   return out;
 }
 
-function applyLayer(layer, x) {
+// Group every n consecutive rows into one wider row - the JS side of
+// FlattenConsecutive. This model is a wavenet-style tree, not a flat MLP: the
+// 8 context characters get merged in pairs (8x10 -> 4x20 -> 2x100 -> 1x200),
+// so activations have to stay a list of rows rather than one long vector.
+function flattenConsecutive(rows, n) {
+  const out = [];
+  for (let i = 0; i < rows.length; i += n) {
+    let merged = [];
+    for (let k = 0; k < n; k++) merged = merged.concat(rows[i + k]);
+    out.push(merged);
+  }
+  return out;
+}
+
+// `rows` is (T, width); every layer maps it to a new (T', width')
+function applyLayer(layer, rows) {
   if (layer.type === "linear") {
-    let out = matVec(layer.weight, x);
-    if (layer.bias) out = out.map((v, j) => v + layer.bias[j]);
-    return out;
+    const fanIn = layer.weight.length;
+    const width = rows[0].length;
+    if (fanIn !== width) {
+      // the exporter doesn't record the FlattenConsecutive layers, but the
+      // linear's fan_in says exactly how many rows it expects to see merged
+      if (fanIn % width !== 0) throw new Error(`can't feed width ${width} into a fan_in of ${fanIn}`);
+      rows = flattenConsecutive(rows, fanIn / width);
+    }
+    return rows.map(row => {
+      const out = matVec(layer.weight, row);
+      return layer.bias ? out.map((v, j) => v + layer.bias[j]) : out;
+    });
   }
   if (layer.type === "batchnorm") {
     const mean = flatten(layer.runningMean);
     const varr = flatten(layer.runningVar);
     const gamma = flatten(layer.gamma);
     const beta = flatten(layer.beta);
-    return x.map((v, i) => {
+    return rows.map(row => row.map((v, i) => {
       const xhat = (v - mean[i]) / Math.sqrt(varr[i] + layer.eps);
       return xhat * gamma[i] + beta[i];
-    });
+    }));
   }
   if (layer.type === "tanh") {
-    return x.map(Math.tanh);
+    return rows.map(row => row.map(Math.tanh));
   }
   throw new Error("unknown layer type: " + layer.type);
 }
@@ -183,11 +214,10 @@ function generateName() {
   let result = "";
 
   for (let step = 0; step < 40; step++) {
-    let x = [];
-    for (const idx of context) x = x.concat(C[idx]);
-    for (const layer of layers) x = applyLayer(layer, x);
+    let rows = context.map(idx => C[idx]); // (blockSize, nEmbd) - one embedding per row
+    for (const layer of layers) rows = applyLayer(layer, rows);
 
-    const probs = softmax(x);
+    const probs = softmax(rows[0]); // the tree has merged everything down to one row
     const ix = sampleIndex(probs);
     if (ix === dotIndex) break;
 
