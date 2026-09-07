@@ -1,17 +1,29 @@
-"""Export a trained transformer (the model built in GPT.ipynb) to JSON for docs/.
+"""Export the byte-pair model trained in GPTwithTokenizerNoPlot.ipynb to JSON.
 
-The old exporter in MakeMore5Wavenet.ipynb only understood a flat
-Linear/BatchNorm1D/Tanh stack. This one walks the Sequential that GPT.ipynb
-builds - Embedding, PositionalEmbedding, N x Block, LayerNorm, Linear - and
-writes out every tensor docs/index.html needs to run the forward pass in JS.
+This is a sibling of exportGPTWeights.py, not a replacement for it. That one
+still owns the character-level Shakespeare model and docs/gptWeights.json, and
+nothing here writes to either. The transformer half of the format is identical
+- same layer walk, same tensor names - so docs/fineweb.js can reuse the same
+forward pass that docs/gpt.js runs.
 
-Usage from the notebook (no need to rebuild or retrain anything):
+What's different is everything to do with the vocabulary. The Shakespeare model
+had 65 tokens that each happened to be one character, so the browser could turn
+an id into text with a lookup and be done. A byte-pair token is a *byte string*,
+and it's routinely half of a UTF-8 character, so this file writes:
 
-    from exportGPTWeights import export_gpt_weights
-    export_gpt_weights(model, itos)                 # -> docs/gptWeights.json
+    itosBytes    id -> the raw bytes it stands for, so the page can concatenate
+                 bytes and decode UTF-8 once at the end (what tok.decode does)
+                 instead of decoding each token on its own and getting U+FFFD
+    eosId        the <|endoftext|> id, so generation can stop the way the
+                 notebook's sampler does instead of printing the token
+    tokenizer    the learned merges, so the page can *encode* a typed prompt
+                 with the exact merge order the model was trained on
 
-Layers are matched by class *name*, not isinstance, so a reloaded
-waveNetArchitecture module in a long-lived kernel can't break the export.
+Usage from the notebook (pass the tokenizer itself - everything vocabulary-side
+is derived from it, so the weights and the vocab can't drift apart):
+
+    from exportFineWebWeights import export_fineweb_weights
+    export_fineweb_weights(model, tok)          # -> docs/finewebWeights.json
 """
 
 import json
@@ -23,9 +35,9 @@ import numpy as np
 def _refuse_vocab_mismatch(path, vocab_size, allow):
     """Bail out if `path` already holds weights for a differently-sized vocabulary.
 
-    Re-exporting the same model after more training keeps the same vocab and sails
-    through. Pointing an exporter at another model's weights file does not, because
-    that's never something you meant to do.
+    The mirror of the guard in exportGPTWeights.py, kept here as its own copy so the
+    two exporters stay independent. Re-exporting this model after more training keeps
+    vocab 1025 and sails through; aiming it at docs/gptWeights.json does not.
     """
     if allow or not os.path.exists(path):
         return
@@ -39,9 +51,9 @@ def _refuse_vocab_mismatch(path, vocab_size, allow):
         return
     raise ValueError(
         f"refusing to overwrite {path}: it holds a vocab-{found} model, but this export "
-        f"has vocab {vocab_size}. The byte-pair model belongs in docs/finewebWeights.json "
-        f"via exportFineWebWeights.export_fineweb_weights(model, tok). If you really do "
-        f"mean to replace it, pass overwrite_mismatch=True."
+        f"has vocab {vocab_size}. docs/gptWeights.json belongs to the character-level "
+        f"shakespear model and is written by exportGPTWeights.py. If you really do mean "
+        f"to replace it, pass overwrite_mismatch=True."
     )
 
 
@@ -84,25 +96,26 @@ def _block(block, decimals):
         "ln2": _layernorm(block.ln2, decimals),
         "ff": {
             "fc": _linear(ff[0], decimals),
-            "act": type(ff[1]).__name__.lower(),  # "relu" (was "tanh" before the switch)
+            "act": type(ff[1]).__name__.lower(),  # "relu"
             "proj": _linear(ff[2], decimals),
         },
     }
 
 
-def export_gpt_weights(model, itos, path="docs/gptWeights.json", decimals=6,
-                       overwrite_mismatch=False):
-    """Serialize `model` (a Sequential of transformer parts) to `path`.
+def export_fineweb_weights(model, tok, path="docs/finewebWeights.json", decimals=6,
+                           eos_token="<|endoftext|>", overwrite_mismatch=False):
+    """Serialize `model` (a Sequential of transformer parts) plus `tok`'s vocabulary.
 
-    Refuses to overwrite a weights file whose vocabulary is a different size than
-    the model being exported. `path` defaults to the character-level Shakespeare
-    weights, so calling this from a notebook holding some *other* model silently
-    replaces the model behind the site's shakespeare tab - which is a lot easier
-    to do than it sounds. Pass overwrite_mismatch=True to mean it on purpose.
+    `tok` is a bpeTokenizer.RegexTokenizer - the same object the notebook trained
+    against. Its vocab, merges and special tokens all go into the file, so the
+    page never needs a second fetch to tokenize a prompt.
     """
     out = {
-        "format": "gpt-v1",
-        "itos": {str(k): v for k, v in itos.items()},
+        "format": "gpt-bpe-v1",
+        # kept as text purely so the file is readable/greppable; the page decodes
+        # from itosBytes, because this field is lossy for partial-character tokens
+        "itos": {str(i): b.decode("utf-8", errors="replace") for i, b in tok.vocab.items()},
+        "itosBytes": {str(i): list(b) for i, b in tok.vocab.items()},
         "blocks": [],
     }
 
@@ -119,7 +132,7 @@ def export_gpt_weights(model, itos, path="docs/gptWeights.json", decimals=6,
         elif kind == "Linear":
             out["head"] = _linear(layer, decimals)                       # (n_embd, vocab)
         else:
-            raise ValueError(f"export_gpt_weights doesn't know how to serialize a {kind}")
+            raise ValueError(f"export_fineweb_weights doesn't know how to serialize a {kind}")
 
     for required in ("tokenEmbedding", "positionEmbedding", "lnFinal", "head"):
         if required not in out:
@@ -132,7 +145,19 @@ def export_gpt_weights(model, itos, path="docs/gptWeights.json", decimals=6,
     out["nBlocks"] = len(out["blocks"])
     out["nParams"] = int(sum(p.data.size for p in model.parameters()))
 
+    # -1 rather than null: the page compares every sampled id against this, and a
+    # model exported without an EOS token should simply never match
+    out["eosId"] = int(tok.special_tokens.get(eos_token, -1))
+    out["tokenizer"] = {
+        # the Python split pattern, for reference only - docs/fineweb.js carries
+        # its own translation of it, since (?i:...) isn't valid JavaScript regex
+        "pattern": tok.pattern,
+        "merges": [[int(p0), int(p1), int(idx)] for (p0, p1), idx in tok.merges.items()],
+        "specialTokens": {name: int(i) for name, i in tok.special_tokens.items()},
+    }
+
     assert len(out["itos"]) == out["vocabSize"], "itos doesn't match the embedding table"
+    assert len(out["itosBytes"]) == out["vocabSize"], "itosBytes doesn't match the embedding table"
 
     _refuse_vocab_mismatch(path, out["vocabSize"], overwrite_mismatch)
 
@@ -146,6 +171,7 @@ def export_gpt_weights(model, itos, path="docs/gptWeights.json", decimals=6,
         f"Wrote {path} ({os.path.getsize(path)/1024:.1f} KB) - "
         f"{out['nParams']:,} params, vocab {out['vocabSize']}, "
         f"n_embd {out['nEmbd']}, {out['nBlocks']} blocks x {out['numHeads']} heads, "
-        f"block size {out['blockSize']}"
+        f"block size {out['blockSize']}, {len(out['tokenizer']['merges'])} merges, "
+        f"eos {out['eosId']}"
     )
     return path

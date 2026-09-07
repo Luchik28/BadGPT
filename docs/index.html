@@ -72,6 +72,31 @@
     padding-left: 1rem;
   }
   #shakespeare:empty { display: none; }
+  /* --- badGPT v4 (byte-pair) panel --- */
+  #finewebQuery {
+    font-family: inherit;
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid #d8d8d8;
+    border-radius: 6px;
+    resize: vertical;
+    min-height: 4.5rem;
+    margin-bottom: 0.75rem;
+  }
+  #fineweb {
+    white-space: pre-wrap;
+    font-family: inherit;
+    font-size: 1rem;
+    line-height: 1.5;
+    margin-top: 2rem;
+    border-left: 2px solid #d8d8d8;
+    padding-left: 1rem;
+  }
+  /* the prompt is echoed back so the completion reads as one continuous
+     passage; greying it out keeps it clear which half the model wrote */
+  #finewebPrompt { color: #8b949e; }
 </style>
 </head>
 <body>
@@ -80,6 +105,7 @@
   <button class="tab active" data-panel="panel-names">name generator</button>
   <button class="tab" data-panel="panel-wavenet">wavenet</button>
   <button class="tab" data-panel="panel-gpt">shakespeare</button>
+  <button class="tab" data-panel="panel-fineweb">tokenizer</button>
 </nav>
 
 <section id="panel-names">
@@ -132,6 +158,26 @@
   <li>This model includes 56,769 parameters, 4 transformer blocks of 4 attention heads each, and 64 characters of context. For scale, GPT-3 had about three million times as many parameters.</li>
   <li>This model was trained on 1.1 million characters of <a href="https://github.com/Luchik28/BadGPT/blob/main/shakespear.txt">shakespear.txt</a>, which took roughly 20 hours on my CPU. It finished at 1.55 train / 1.76 validation loss, down from 4.14 at the start.</li>
   <li>In terms of progress towards building a chatGPT-like thing, this is about half of it. It completes documents, just not question-answer documents. To get to something that could answer questions, I would have to train it on a dataset of question-answer examples.</li>
+</ul>
+
+</section>
+
+<section id="panel-fineweb" hidden>
+
+<h1>badGPT v4</h1>
+<p class="sub">The same transformer as v3, except it reads <em>tokens</em> instead of characters. A byte-pair vocabulary of 1,025 chunks gets learned from the text itself, so common pieces like " the" are one step instead of four. It's trained on web articles rather than shakespear, and you can hand it something to continue.</p>
+
+<textarea id="finewebQuery" placeholder="Give it something to continue, or leave this blank and let it start on its own."></textarea>
+<button id="finewebBtn" disabled>Loading model...</button>
+<div id="finewebStatus" class="status"></div>
+<pre id="fineweb" hidden><span id="finewebPrompt"></span><span id="finewebOut"></span></pre>
+
+<h3>A few notes:</h3>
+<ul class="sub">
+  <li>119,169 parameters, 4 transformer blocks of 4 attention heads each, and 64 tokens of context. A token averages a bit over two characters here, so the same 64-slot window reaches back about 150 characters instead of 64.</li>
+  <li>Trained on a slice of <a href="https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu">FineWeb-Edu</a>, so it writes in the register of an explainer article. It is still far too small to actually know anything, so expect confident, well-shaped nonsense.</li>
+  <li>Your prompt is tokenized in the browser using the exact same merges the model trained on. The greyed-out text is your prompt; everything after it is the model.</li>
+  <li>It was trained with an explicit end-of-text token, so unlike the other three it can decide it's finished and stop on its own.</li>
 </ul>
 
 </section>
@@ -360,6 +406,81 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
       if (tab.dataset.panel === "panel-wavenet") wavenetPanel.load();
     });
   });
+})();
+</script>
+
+<script src="fineweb.js"></script>
+<script>
+// The byte-pair panel. Kept entirely separate from the transformer panel above:
+// its own weights file, its own forward pass, its own namespace, so nothing
+// here can affect v3. The generic tab handler above already shows and hides
+// this section - it walks every #tabs button and every section[id^='panel-'] -
+// so the only thing this listener adds is the lazy load, since the weights are
+// about a megabyte and most visitors never open this tab.
+(function () {
+  const btn = document.getElementById("finewebBtn");
+  const status = document.getElementById("finewebStatus");
+  const query = document.getElementById("finewebQuery");
+  const pre = document.getElementById("fineweb");
+  const promptEcho = document.getElementById("finewebPrompt");
+  const out = document.getElementById("finewebOut");
+  let net = null;
+  let loading = null;
+  let busy = false;
+
+  function load() {
+    if (loading) return loading;
+    status.textContent = "Loading the model (~1.2MB)...";
+    loading = fetch("finewebWeights.json")
+      .then(res => {
+        if (!res.ok) throw new Error(res.status);
+        return res.json();
+      })
+      .then(json => {
+        net = BadGPTBPE.prepare(json);
+        status.textContent = "";
+        btn.textContent = "Continue the text";
+        btn.disabled = false;
+      })
+      .catch(() => {
+        status.textContent = "Couldn't load finewebWeights.json — run the export cell in GPTwithTokenizerNoPlot.ipynb first, and serve this folder over http:// (not file://).";
+      });
+    return loading;
+  }
+
+  btn.addEventListener("click", async () => {
+    if (busy || !net) return;
+    busy = true;
+    btn.disabled = true;
+    btn.textContent = "Writing...";
+
+    // an empty box is a valid prompt: that's the "start on your own" case, and
+    // generate() pads it out to a full window exactly like the notebook does
+    const prompt = query.value;
+    promptEcho.textContent = prompt;
+    out.textContent = "";
+    pre.hidden = false;
+
+    const result = await BadGPTBPE.generate(net, {
+      prime: prompt ? BadGPTBPE.encode(net, prompt) : [],
+      length: 300,
+      onChunk: async (chunk, done, total) => {
+        out.textContent += chunk;
+        status.textContent = Math.round((done / total) * 100) + "%";
+        // hand the thread back so the page actually paints each batch
+        await new Promise(requestAnimationFrame);
+      },
+    });
+
+    status.textContent = result.stoppedOnEos ? "the model stopped on its own" : "";
+    btn.textContent = "Continue the text";
+    btn.disabled = false;
+    busy = false;
+  });
+
+  document
+    .querySelector('#tabs button[data-panel="panel-fineweb"]')
+    .addEventListener("click", load);
 })();
 </script>
 
