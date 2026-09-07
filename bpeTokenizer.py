@@ -45,6 +45,7 @@ class BasicTokenizer:
         self.pattern = None
         self.merges = {}                    # (int, int) -> int, in the order they were learned
         self.vocab = {i: bytes([i]) for i in range(256)}   # int -> the bytes it stands for
+        self.special_tokens = {}            # name -> id, e.g. {'<|endoftext|>': 1024}
 
     def __repr__(self):
         return f"{type(self).__name__}(vocab_size={self.vocab_size})"
@@ -54,13 +55,11 @@ class BasicTokenizer:
         return len(self.vocab)
 
     def _build_vocab(self):
-        """merges -> vocab. Order matters: a merge only ever references older tokens."""
         self.vocab = {i: bytes([i]) for i in range(256)}
         for (p0, p1), idx in self.merges.items():
             self.vocab[idx] = self.vocab[p0] + self.vocab[p1]
 
     def train(self, text, vocab_size, verbose=False):
-        """Learn `vocab_size - 256` merges from `text`. Returns self, so you can chain."""
         assert vocab_size >= 256, "the 256 byte values are the floor of any byte-level vocab"
         ids = list(text.encode('utf-8'))    # 0..255, one int per byte
         self.merges = {}
@@ -78,8 +77,15 @@ class BasicTokenizer:
         self._build_vocab()
         return self
 
+    def add_special_token(self, name):
+        if name in self.special_tokens:
+            return self.special_tokens[name]
+        idx = len(self.vocab)
+        self.vocab[idx] = name.encode('utf-8')
+        self.special_tokens[name] = idx
+        return idx
+
     def decode(self, ids):
-        """ids -> str. Every token is a byte string, so glue them and decode once."""
         raw = b"".join(self.vocab[i] for i in ids)
         # errors='replace' because an arbitrary token sequence (say, one a half-trained
         # model just sampled) can easily be invalid UTF-8. Crashing there is no fun.
@@ -104,6 +110,7 @@ class BasicTokenizer:
                 'type': type(self).__name__,
                 'pattern': self.pattern,
                 'merges': [[p0, p1, idx] for (p0, p1), idx in self.merges.items()],
+                'special_tokens': self.special_tokens,
             }, f)
         return path
 
@@ -115,6 +122,9 @@ class BasicTokenizer:
         tok = cls(saved['pattern']) if saved.get('pattern') else cls()
         tok.merges = {(p0, p1): idx for p0, p1, idx in saved['merges']}
         tok._build_vocab()
+        for name, idx in saved.get('special_tokens', {}).items():
+            tok.vocab[idx] = name.encode('utf-8')
+            tok.special_tokens[name] = idx
         return tok
 
 
