@@ -72,31 +72,59 @@
     padding-left: 1rem;
   }
   #shakespeare:empty { display: none; }
-  /* --- badGPT v4 (byte-pair) panel --- */
+  /* --- badGPT v4 (byte-pair) panel: a texting-style transcript --- */
+  #finewebChat {
+    margin-top: 2rem;
+    border: 1px solid #d8d8d8;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  #finewebLog {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 1rem;
+    height: 20rem;
+    overflow-y: auto;
+  }
+  .fw-msg {
+    max-width: 80%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .fw-you {
+    align-self: flex-end;
+    background: #696969;
+    color: #ffffff;
+    border-bottom-right-radius: 3px;
+  }
+  .fw-bot {
+    align-self: flex-start;
+    background: #f0f0f0;
+    color: #000000;
+    border-bottom-left-radius: 3px;
+  }
+  .fw-thinking { color: #8b949e; }
+  #finewebForm {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.6rem;
+    border-top: 1px solid #d8d8d8;
+  }
   #finewebQuery {
+    flex: 1;
+    min-width: 0;              /* lets the input shrink instead of overflowing the row */
     font-family: inherit;
     font-size: 1rem;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 0.6rem 0.7rem;
+    padding: 0.5rem 0.6rem;
     border: 1px solid #d8d8d8;
     border-radius: 6px;
-    resize: vertical;
-    min-height: 4.5rem;
-    margin-bottom: 0.75rem;
   }
-  #fineweb {
-    white-space: pre-wrap;
-    font-family: inherit;
-    font-size: 1rem;
-    line-height: 1.5;
-    margin-top: 2rem;
-    border-left: 2px solid #d8d8d8;
-    padding-left: 1rem;
-  }
-  /* the prompt is echoed back so the completion reads as one continuous
-     passage; greying it out keeps it clear which half the model wrote */
-  #finewebPrompt { color: #8b949e; }
+  #finewebForm button { padding: 0.5rem 1.1rem; }
+  button.next-tab { display: block; margin-top: 2.5rem; }
 </style>
 </head>
 <body>
@@ -105,13 +133,13 @@
   <button class="tab active" data-panel="panel-names">name generator</button>
   <button class="tab" data-panel="panel-wavenet">wavenet</button>
   <button class="tab" data-panel="panel-gpt">shakespeare</button>
-  <button class="tab" data-panel="panel-fineweb">tokenizer</button>
+  <button class="tab" data-panel="panel-fineweb">badGPT</button>
 </nav>
 
 <section id="panel-names">
 
 <h1>badGPT</h1>
-<p class="sub">This is my attempt at making an LLM with just python and numPy. However, that's really hard, and so I've started with a small character-level name generator.</p>
+<p class="sub">This is my attempt at making an LLM with just python and numPy. However, that's really hard, and so I've started with a small character-level name generator. Go through all of the tabs until you get to the chatbot at the end.</p>
 
 <button id="generateBtn" disabled>Loading model...</button>
 <div id="status" class="status"></div>
@@ -123,6 +151,8 @@
   <li>Overall, the finished product is rather unimpressive (unless you have a similar taste in names to Elon); I highly suggest you check out the <a href="https://github.com/Luchik28/BadGPT">Github Repository</a>, which is a little more interesting.</li>
   <li>I got a lot of inspiration (and the names dataset) from Andrej Karpathy's <a href="https://www.youtube.com/watch?v=VMj-3S1tku0&list=PLAqhIrjkxbuWI23v9cThsA9GvCAUhRvKZ&index=1">Nueral Networks series</a>. It was really helpful and fun to watch so you should check it out.</li>
 </ul>
+
+<button class="next-tab" data-next="panel-wavenet">next: wavenet &rarr;</button>
 
 </section>
 
@@ -140,6 +170,8 @@
   <li>It gets 8 characters of context instead of 3, folded together two at a time (8 &rarr; 4 &rarr; 2 &rarr; 1), so every layer only ever compares neighbours. It has 45,597 parameters.</li>
   <li>This model performs markedly worse than the last one, unfortunately, despite the fancier architecture.</li>
 </ul>
+
+<button class="next-tab" data-next="panel-gpt">next: shakespeare &rarr;</button>
 
 </section>
 
@@ -160,24 +192,30 @@
   <li>In terms of progress towards building a chatGPT-like thing, this is about half of it. It completes documents, just not question-answer documents. To get to something that could answer questions, I would have to train it on a dataset of question-answer examples.</li>
 </ul>
 
+<button class="next-tab" data-next="panel-fineweb">next: badGPT &rarr;</button>
+
 </section>
 
 <section id="panel-fineweb" hidden>
 
 <h1>badGPT v4</h1>
-<p class="sub">The same transformer as v3, except it reads <em>tokens</em> instead of characters. A byte-pair vocabulary of 1,025 chunks gets learned from the text itself, so common pieces like " the" are one step instead of four. It's trained on web articles rather than shakespear, and you can hand it something to continue.</p>
+<p class="sub">This has the same transformer as the shakespear model, except it reads tokens instead of characters. I used byte pair encodings, so commong words like " the" take up one token instead of 4. Instead of training on shakespear, it's trained on web articles, like what real LLMs are trained off of, so it sounds a little less archaic.</p>
 
-<textarea id="finewebQuery" placeholder="Give it something to continue, or leave this blank and let it start on its own."></textarea>
-<button id="finewebBtn" disabled>Loading model...</button>
+<div id="finewebChat">
+  <div id="finewebLog"></div>
+  <form id="finewebForm">
+    <input id="finewebQuery" type="text" autocomplete="off" placeholder="Say something..." disabled>
+    <button id="finewebBtn" type="submit" disabled>Loading...</button>
+  </form>
+</div>
 <div id="finewebStatus" class="status"></div>
-<pre id="fineweb" hidden><span id="finewebPrompt"></span><span id="finewebOut"></span></pre>
 
 <h3>A few notes:</h3>
 <ul class="sub">
-  <li>119,169 parameters, 4 transformer blocks of 4 attention heads each, and 64 tokens of context. A token averages a bit over two characters here, so the same 64-slot window reaches back about 150 characters instead of 64.</li>
-  <li>Trained on a slice of <a href="https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu">FineWeb-Edu</a>, so it writes in the register of an explainer article. It is still far too small to actually know anything, so expect confident, well-shaped nonsense.</li>
-  <li>Your prompt is tokenized in the browser using the exact same merges the model trained on. The greyed-out text is your prompt; everything after it is the model.</li>
-  <li>It was trained with an explicit end-of-text token, so unlike the other three it can decide it's finished and stop on its own.</li>
+  <li>This model has 119,169 parameters (GPT2, which this model is based off of, has 1.5 billion. Current (September 2026) models, like Claude's Fable, have trillions). It has 4 transformer blocks of 4 attention heads each, and 64 tokens of context. A token averages a bit over two characters here, so the same 64 tokens of context means it can include up to 150 characters of context instead of 64.</li>
+  <li>Trained on a slice of <a href="https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu">FineWeb-Edu</a>, so it writes like an explainer article, or would if it was large enough to write coherent sentences.</li>
+  <li>This model, like GPT2, wasn't trained on any specific question answer documents, like later models have been. So it's not really a chatbot, in the modern sense, but it's as close as I can get.</li>
+  <li>It was trained with an explicit end-of-text token, so unlike the other three which stop at a predetermined max token count, it can decide it's finished and stop on its own.</li>
 </ul>
 
 </section>
@@ -406,6 +444,17 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
       if (tab.dataset.panel === "panel-wavenet") wavenetPanel.load();
     });
   });
+
+  // "next tab" buttons at the bottom of each panel - just replay a click on the
+  // matching nav tab so all the show/hide/lazy-load logic above stays in one place
+  document.querySelectorAll("button.next-tab").forEach(nextBtn => {
+    nextBtn.addEventListener("click", () => {
+      const tab = document.querySelector('#tabs button[data-panel="' + nextBtn.dataset.next + '"]');
+      if (!tab) return;
+      tab.click();
+      window.scrollTo(0, 0);
+    });
+  });
 })();
 </script>
 
@@ -418,15 +467,24 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
 // so the only thing this listener adds is the lazy load, since the weights are
 // about a megabyte and most visitors never open this tab.
 (function () {
+  const form = document.getElementById("finewebForm");
   const btn = document.getElementById("finewebBtn");
   const status = document.getElementById("finewebStatus");
   const query = document.getElementById("finewebQuery");
-  const pre = document.getElementById("fineweb");
-  const promptEcho = document.getElementById("finewebPrompt");
-  const out = document.getElementById("finewebOut");
+  const log = document.getElementById("finewebLog");
   let net = null;
   let loading = null;
   let busy = false;
+  const transcript = []; // recent turns, so a reply has some thread to hang on
+
+  function bubble(kind, text) {
+    const el = document.createElement("div");
+    el.className = "fw-msg fw-" + kind;
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
 
   function load() {
     if (loading) return loading;
@@ -439,8 +497,10 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
       .then(json => {
         net = BadGPTBPE.prepare(json);
         status.textContent = "";
-        btn.textContent = "Continue the text";
+        btn.textContent = "Send";
         btn.disabled = false;
+        query.disabled = false;
+        query.focus();
       })
       .catch(() => {
         status.textContent = "Couldn't load finewebWeights.json — run the export cell in GPTwithTokenizerNoPlot.ipynb first, and serve this folder over http:// (not file://).";
@@ -448,34 +508,57 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
     return loading;
   }
 
-  btn.addEventListener("click", async () => {
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault(); // the form exists purely to get enter-to-send for free
     if (busy || !net) return;
-    busy = true;
-    btn.disabled = true;
-    btn.textContent = "Writing...";
+    const said = query.value.trim();
+    if (!said) return;
 
-    // an empty box is a valid prompt: that's the "start on your own" case, and
-    // generate() pads it out to a full window exactly like the notebook does
-    const prompt = query.value;
-    promptEcho.textContent = prompt;
-    out.textContent = "";
-    pre.hidden = false;
+    busy = true;
+    query.value = "";
+    query.disabled = true;
+    btn.disabled = true;
+    status.textContent = "";
+
+    bubble("you", said);
+    transcript.push(said);
+
+    const reply = bubble("bot", "...");
+    reply.classList.add("fw-thinking");
+    let empty = true;
 
     const result = await BadGPTBPE.generate(net, {
-      prime: prompt ? BadGPTBPE.encode(net, prompt) : [],
-      length: 300,
-      onChunk: async (chunk, done, total) => {
-        out.textContent += chunk;
-        status.textContent = Math.round((done / total) * 100) + "%";
+      // the last few turns become the prompt; generate() keeps only the final
+      // blockSize tokens of that, which is all the model can see anyway. The cap
+      // is here so encoding stays cheap once the conversation gets long.
+      prime: BadGPTBPE.encode(net, transcript.slice(-6).join("\n")),
+      length: 120,
+      onChunk: async (chunk) => {
+        if (empty) {
+          reply.textContent = "";
+          reply.classList.remove("fw-thinking");
+          chunk = chunk.replace(/^\s+/, ""); // it continues text, so it usually opens on a space
+          empty = false;
+        }
+        reply.textContent += chunk;
+        log.scrollTop = log.scrollHeight;
         // hand the thread back so the page actually paints each batch
         await new Promise(requestAnimationFrame);
       },
     });
 
-    status.textContent = result.stoppedOnEos ? "the model stopped on its own" : "";
-    btn.textContent = "Continue the text";
-    btn.disabled = false;
+    if (empty) {
+      // it emitted end-of-text before producing anything at all
+      reply.textContent = "(said nothing)";
+    } else {
+      transcript.push(result.text.trim());
+    }
+    status.textContent = result.stoppedOnEos ? "it stopped on its own" : "";
+
     busy = false;
+    query.disabled = false;
+    btn.disabled = false;
+    query.focus();
   });
 
   document
