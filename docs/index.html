@@ -199,7 +199,7 @@
 <section id="panel-fineweb" hidden>
 
 <h1>badGPT v4</h1>
-<p class="sub">This has the same transformer as the shakespear model, except it reads tokens instead of characters. I used byte pair encodings, so commong words like " the" take up one token instead of 4. Instead of training on shakespear, it's trained on web articles, like what real LLMs are trained off of, so it sounds a little less archaic.</p>
+<p class="sub">This has the same transformer as the shakespear model, except it reads tokens instead of characters. I used byte pair encodings, so common words like " the" take up one token instead of 4. Instead of training on shakespear, it's trained on web articles, like what real LLMs are trained off of, so it sounds a little less archaic.</p>
 
 <div id="finewebChat">
   <div id="finewebLog"></div>
@@ -212,9 +212,9 @@
 
 <h3>A few notes:</h3>
 <ul class="sub">
-  <li>This model has 119,169 parameters (GPT2, which this model is based off of, has 1.5 billion. Current (September 2026) models, like Claude's Fable, have trillions). It has 4 transformer blocks of 4 attention heads each, and 64 tokens of context. A token averages a bit over two characters here, so the same 64 tokens of context means it can include up to 150 characters of context instead of 64.</li>
+  <li>This model has 119,169 parameters (GPT-2, which this model is based off of, has 1.5 billion. Current (September 2026) models, like Claude's Fable, have trillions). It has 4 transformer blocks of 4 attention heads each, and 64 tokens of context. A token averages a bit over two characters here, so the same 64 tokens of context means it can include up to 150 characters of context instead of 64.</li>
   <li>Trained on a slice of <a href="https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu">FineWeb-Edu</a>, so it writes like an explainer article, or would if it was large enough to write coherent sentences.</li>
-  <li>This model, like GPT2, wasn't trained on any specific question answer documents, like later models have been. So it's not really a chatbot, in the modern sense, but it's as close as I can get.</li>
+  <li>This model, like GPT-2, wasn't trained on any specific question answer documents, like later models have been. So it's not really a chatbot, in the modern sense, but it's as close as I can get.</li>
   <li>It was trained with an explicit end-of-text token, so unlike the other three which stop at a predetermined max token count, it can decide it's finished and stop on its own.</li>
 </ul>
 
