@@ -340,7 +340,7 @@ function nameGenerator(opts) {
     if (loading) return loading;
     loading = fetch(opts.weights)
       .then(res => {
-        if (!res.ok) throw new Error(res.status);
+        if (!res.ok) throw new Error(opts.weights + " returned HTTP " + res.status);
         return res.json();
       })
       .then(json => {
@@ -348,8 +348,9 @@ function nameGenerator(opts) {
         btn.textContent = "Generate a name";
         btn.disabled = false;
       })
-      .catch(() => {
-        status.textContent = "Couldn't load " + opts.weights + " — run the export cell in the notebook first, and serve this folder over http:// (not file://).";
+      .catch(err => {
+        console.error("couldn't load " + opts.weights + ":", err);
+        status.textContent = "Couldn't start the model: " + err.message + ". If you opened this file from disk, serve the folder over http:// instead of file://.";
       });
     return loading;
   }
@@ -377,7 +378,7 @@ const wavenetPanel = nameGenerator({
 bigramPanel.load(); // the visible tab loads right away; the others wait to be opened
 </script>
 
-<script src="gpt.js"></script>
+<script src="transformer.js"></script>
 <script>
 // Tabs + the transformer panel. Wrapped in an IIFE so none of these names
 // collide with the name generator's globals above.
@@ -396,17 +397,22 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
     status.textContent = "Loading the model (~600KB)...";
     loading = fetch("gptWeights.json")
       .then(res => {
-        if (!res.ok) throw new Error(res.status);
+        if (!res.ok) throw new Error("gptWeights.json returned HTTP " + res.status);
         return res.json();
       })
       .then(json => {
+        // transformer.js is a separate <script>, so it can fail independently of
+        // the weights - an extension or a network filter can drop it and leave us
+        // here with good JSON and no BadGPT. Say so instead of blaming the fetch.
+        if (typeof BadGPT === "undefined") throw new Error("transformer.js didn't load - a content blocker or network filter may have dropped it");
         net = BadGPT.prepare(json);
         status.textContent = "";
         btn.textContent = "Write some Shakespeare";
         btn.disabled = false;
       })
-      .catch(() => {
-        status.textContent = "Couldn't load gptWeights.json — run the export cell in GPT.ipynb first, and serve this folder over http:// (not file://).";
+      .catch(err => {
+        console.error("shakespeare tab failed to start:", err);
+        status.textContent = "Couldn't start the model: " + err.message + ". If you opened this file from disk, serve the folder over http:// instead of file://.";
       });
     return loading;
   }
@@ -491,10 +497,11 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
     status.textContent = "Loading the model (~1.2MB)...";
     loading = fetch("finewebWeights.json")
       .then(res => {
-        if (!res.ok) throw new Error(res.status);
+        if (!res.ok) throw new Error("finewebWeights.json returned HTTP " + res.status);
         return res.json();
       })
       .then(json => {
+        if (typeof BadGPTBPE === "undefined") throw new Error("fineweb.js didn't load - a content blocker or network filter may have dropped it");
         net = BadGPTBPE.prepare(json);
         status.textContent = "";
         btn.textContent = "Send";
@@ -502,8 +509,9 @@ bigramPanel.load(); // the visible tab loads right away; the others wait to be o
         query.disabled = false;
         query.focus();
       })
-      .catch(() => {
-        status.textContent = "Couldn't load finewebWeights.json — run the export cell in GPTwithTokenizerNoPlot.ipynb first, and serve this folder over http:// (not file://).";
+      .catch(err => {
+        console.error("badGPT tab failed to start:", err);
+        status.textContent = "Couldn't start the model: " + err.message + ". If you opened this file from disk, serve the folder over http:// instead of file://.";
       });
     return loading;
   }

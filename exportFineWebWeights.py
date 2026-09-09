@@ -4,7 +4,7 @@ This is a sibling of exportGPTWeights.py, not a replacement for it. That one
 still owns the character-level Shakespeare model and docs/gptWeights.json, and
 nothing here writes to either. The transformer half of the format is identical
 - same layer walk, same tensor names - so docs/fineweb.js can reuse the same
-forward pass that docs/gpt.js runs.
+forward pass that docs/transformer.js runs.
 
 What's different is everything to do with the vocabulary. The Shakespeare model
 had 65 tokens that each happened to be one character, so the browser could turn

@@ -1,10 +1,10 @@
 // Forward pass + byte-pair tokenizer for the model trained in
 // GPTwithTokenizerNoPlot.ipynb (FineWeb-Edu, vocab 1025).
 //
-// This is a deliberate copy of gpt.js rather than an extension of it. gpt.js
+// This is a deliberate copy of transformer.js rather than an extension of it. transformer.js
 // drives the character-level Shakespeare panel and is left exactly as it was;
 // duplicating ~150 lines of matmul is cheaper than risking that model to share
-// them. The transformer half below is identical to gpt.js line for line -
+// them. The transformer half below is identical to transformer.js line for line -
 // nothing in it ever depended on the vocabulary size.
 //
 // Everything that *is* new is tokenizer work, and it all comes from one place:
