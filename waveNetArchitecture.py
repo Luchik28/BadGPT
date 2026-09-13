@@ -44,8 +44,23 @@ class Value:
         out = Value(self.data @ other.data, (self, other), "@")
         def _backward():
             # works for 2D (n,k)@(k,m) and batched (...,n,k)@(k,m) inputs
-            sg = out.grad @ np.swapaxes(other.data, -1, -2)
-            og = np.swapaxes(self.data, -1, -2) @ out.grad
+            if other.data.ndim == 2 and self.data.ndim > 2:
+                # Every Linear lands here: batched activations against one shared 2D
+                # weight. Folding the batch dims into the row dim makes each gradient
+                # a single large GEMM. The batched path below would instead build a
+                # (B, k, m) stack only to sum it straight back down to (k, m) - same
+                # arithmetic, B times the memory, and B small matmuls in place of one
+                # big one. That is what made n_embd=128 thrash and n_embd=192 run out
+                # of memory.
+                k = self.data.shape[-1]
+                m = out.grad.shape[-1]
+                a2 = self.data.reshape(-1, k)
+                g2 = out.grad.reshape(-1, m)
+                sg = (g2 @ other.data.T).reshape(self.data.shape)
+                og = a2.T @ g2
+            else:
+                sg = out.grad @ np.swapaxes(other.data, -1, -2)
+                og = np.swapaxes(self.data, -1, -2) @ out.grad
             self.grad += Value._unbroadcast(sg, self.data.shape)
             other.grad += Value._unbroadcast(og, other.data.shape)
         
