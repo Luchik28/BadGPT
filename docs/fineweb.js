@@ -337,17 +337,19 @@ var BadGPTBPE = (function () {
     const onChunk = opts.onChunk;
     const rand = opts.rand;
 
-    // Match the notebook's sampler exactly: left-pad the prompt with token 0 up
-    // to blockSize, or keep only the most recent blockSize tokens if it's
-    // longer. Every window the model trained on was a full blockSize wide, so
-    // handing it a short one is off-distribution in a way padding avoids.
-    const prime = opts.prime && opts.prime.length ? opts.prime.slice() : [];
-    let context;
-    if (prime.length >= net.blockSize) {
-      context = prime.slice(-net.blockSize);
-    } else {
-      context = new Array(net.blockSize - prime.length).fill(0).concat(prime);
-    }
+    // Don't pad a short prompt up to blockSize. The forward pass already handles
+    // T < blockSize - that's what the causal mask and the positional slice are
+    // for - and every prefix of every training window is real text the model
+    // actually saw, so a short real context is *more* in-distribution than a
+    // longer one, not less. Padding with token 0 used to fill the gap with 0x00
+    // bytes that never once occur in the training corpus: the model had literally
+    // zero examples of that context, which is what made short prompts come out
+    // as noise. EOS_ID is the right filler when there's no prompt at all - it's
+    // the token that marks "a new document starts here" throughout training, so
+    // it seeds generation with the one context built for exactly this.
+    const seed = net.eosId >= 0 ? net.eosId : 0; // -1 means this export predates eosId
+    const prime = opts.prime && opts.prime.length ? opts.prime.slice() : [seed];
+    let context = prime.length > net.blockSize ? prime.slice(-net.blockSize) : prime;
 
     const decoder = new TextDecoder();
     const tokens = [];
